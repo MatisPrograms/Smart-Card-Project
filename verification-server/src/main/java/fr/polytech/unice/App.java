@@ -1,13 +1,13 @@
 package fr.polytech.unice;
 
+import java.io.IOException;
+
 /**
- * Hello world!
- *
+ * Run the verification server.
  */
 public class App
 {
-    public static void main( String[] args )
-    {
-        System.out.println( "Hello World!" );
+    public static void main( String[] args ) throws IOException {
+        new VerificationServer().start();
     }
 }
