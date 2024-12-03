@@ -1,16 +1,7 @@
 package fr.polytech.unice;
 
-import java.security.interfaces.RSAPublicKey;
-
-import javacard.framework.APDU;
-import javacard.framework.Applet;
-import javacard.framework.ISO7816;
-import javacard.framework.ISOException;
-import javacard.framework.OwnerPIN;
-import javacard.framework.Util;
-import javacard.security.KeyPair;
-import javacard.security.RSAPrivateCrtKey;
-import javacard.security.RSAPublicKey;
+import javacard.framework.*;
+import javacard.security.*;
 import javacardx.crypto.Cipher;
 
 
@@ -256,7 +247,7 @@ public class CardApplet extends Applet {
         Util.arrayCopy(buffer, ISO7816.OFFSET_CDATA, markedData, (short) ASN1_SHA256.length, inputLength);
         byte dataLength = buffer[ISO7816.OFFSET_LC];
         short outLength = cipher.doFinal(markedData, (short) 0, (short) markedData.length, buffer, ISO7816.OFFSET_CDATA);
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, outLength)
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, outLength);
     }
 
     // send back the public key to the client 
