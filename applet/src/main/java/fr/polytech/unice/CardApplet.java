@@ -95,7 +95,6 @@ public class CardApplet extends Applet {
      *
      * @return <code>true</code> if the applet is selected, <code>false</code> otherwise
      */
-    @Override
     public boolean select() {
         return this.pin.getTriesRemaining() != 0;
     }
@@ -103,7 +102,6 @@ public class CardApplet extends Applet {
     /**
      * Deselects the applet and resets the PIN.
      */
-    @Override
     public void deselect() {
         this.pin.reset();
     }
@@ -143,7 +141,6 @@ public class CardApplet extends Applet {
      * @param apdu the incoming <code>APDU</code> object
      * @throws ISOException if an ISO 7816-4 exception occurs
      */
-    @Override
     public void process(APDU apdu) throws ISOException {
         // APDU buffer
         byte[] buffer = apdu.getBuffer();
@@ -156,12 +153,23 @@ public class CardApplet extends Applet {
 
         // check the INS byte to determine the operation
         switch (buffer[ISO7816.OFFSET_INS]) {
-            case GET_BALANCE -> this.getBalance(apdu);
-            case VERIFY -> this.verify(apdu);
-            case CREDIT -> this.credit(apdu);
-            case DEBIT -> this.debit(apdu);
-            case UNBLOCK -> this.pin.resetAndUnblock();
-            default -> ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+            case GET_BALANCE:
+                this.getBalance(apdu);
+                break;
+            case VERIFY:
+                this.verify(apdu);
+                break;
+            case CREDIT:
+                this.credit(apdu);
+                break;
+            case DEBIT:
+                this.debit(apdu);
+                break;
+            case UNBLOCK:
+                this.pin.resetAndUnblock();
+                break;
+            default:
+                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         }
     }
 
