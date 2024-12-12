@@ -1,9 +1,10 @@
-package fr.polytech.unice;
+package polytech;
 
 import javacard.framework.*;
-import javacard.security.*;
+import javacard.security.KeyPair;
+import javacard.security.RSAPrivateCrtKey;
+import javacard.security.RSAPublicKey;
 import javacardx.crypto.Cipher;
-
 
 public class CardApplet extends Applet {
 
@@ -46,15 +47,17 @@ public class CardApplet extends Applet {
 
     // RSA key size
     static final short KEY_BITS = 512;
-
+    private static final byte[] ASN1_SHA256 = {
+            (byte) 0x30, (byte) 0x31, (byte) 0x30, (byte) 0x0d, (byte) 0x06, (byte) 0x09, (byte) 0x60,
+            (byte) 0x86, (byte) 0x48, (byte) 0x01, (byte) 0x65, (byte) 0x03, (byte) 0x04, (byte) 0x02,
+            (byte) 0x01, (byte) 0x05, (byte) 0x00, (byte) 0x04, (byte) 0x20
+    };
     // instance of the PIN
     OwnerPIN pin;
-
-    // RSA key pair
-    private KeyPair keyPair;
-
     // balance of the wallet
     short balance;
+    // RSA key pair
+    private KeyPair keyPair;
 
     /**
      * Creates a new instance of the applet.
@@ -217,7 +220,7 @@ public class CardApplet extends Applet {
         short amount = getAmount(apdu);
 
         // check the balance
-        if (this.balance + amount > MAX_BALANCE) ISOException.throwIt(SW_EXCEED_MAXIMUM_BALANCE);
+        if ((short) (this.balance + amount) > MAX_BALANCE) ISOException.throwIt(SW_EXCEED_MAXIMUM_BALANCE);
 
         // credit the wallet
         this.balance += amount;
@@ -232,25 +235,19 @@ public class CardApplet extends Applet {
         short amount = getAmount(apdu);
 
         // check the balance
-        if (this.balance - amount < 0) ISOException.throwIt(SW_NEGATIVE_BALANCE);
+        if ((short) (this.balance - amount) < 0) ISOException.throwIt(SW_NEGATIVE_BALANCE);
 
         // debit the wallet
         this.balance -= amount;
     }
 
-    private static final byte[] ASN1_SHA256 = {
-        (byte) 0x30, (byte) 0x31, (byte) 0x30, (byte) 0x0d, (byte) 0x06, (byte) 0x09, (byte) 0x60,
-        (byte) 0x86, (byte) 0x48, (byte) 0x01, (byte) 0x65, (byte) 0x03, (byte) 0x04, (byte) 0x02,
-        (byte) 0x01, (byte) 0x05, (byte) 0x00, (byte) 0x04, (byte) 0x20
-    };
-
     // sign the datasent by the client using the private key 
-    private void sign (APDU apdu) {
+    private void sign(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
         Cipher cipher = Cipher.getInstance(Cipher.ALG_RSA_PKCS1, false);
         cipher.init(keyPair.getPrivate(), Cipher.MODE_ENCRYPT);
         short inputLength = buffer[ISO7816.OFFSET_LC];
-        byte[] markedData = new byte[(short)(inputLength + ASN1_SHA256.length)];
+        byte[] markedData = new byte[(short) (inputLength + ASN1_SHA256.length)];
         Util.arrayCopy(ASN1_SHA256, (short) 0, markedData, (short) 0, (short) ASN1_SHA256.length);
         Util.arrayCopy(buffer, ISO7816.OFFSET_CDATA, markedData, (short) ASN1_SHA256.length, inputLength);
         byte dataLength = buffer[ISO7816.OFFSET_LC];

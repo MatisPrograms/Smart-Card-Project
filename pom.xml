@@ -12,14 +12,46 @@
   <name>smart-card</name>
   <description>A simple smart-card.</description>
   <modules>
-    <module>applet</module>
     <module>verification-server</module>
     <module>vending-machine</module>
+    <module>java-card</module>
   </modules>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>23</maven.compiler.source>
-    <maven.compiler.target>23</maven.compiler.target>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
   </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>Egate</groupId>
+      <artifactId>api</artifactId>
+      <version>1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>Egate</groupId>
+      <artifactId>captransf</artifactId>
+      <version>1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>Egate</groupId>
+      <artifactId>converter</artifactId>
+      <version>1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>Egate</groupId>
+      <artifactId>makeijc</artifactId>
+      <version>1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>Egate</groupId>
+      <artifactId>offcardverifier</artifactId>
+      <version>1</version>
+    </dependency>
+  </dependencies>
 </project>
