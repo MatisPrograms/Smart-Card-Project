@@ -9,9 +9,10 @@ import javacardx.crypto.Cipher;
 public class CardApplet extends Applet {
 
     // codes of CLA byte in the command APDU header
-    static final byte WALLET_CLA = (byte) 0xB0;
+    static final byte WALLET_CLA = (byte) 0x42;
 
     // codes of INS byte in the command APDU header
+    static final byte NEW_PIN = (byte) 0x10;
     static final byte VERIFY = (byte) 0x20;
     static final byte CREDIT = (byte) 0x30;
     static final byte DEBIT = (byte) 0x40;
@@ -19,7 +20,7 @@ public class CardApplet extends Applet {
     static final byte UNBLOCK = (byte) 0x60;
 
     // maximum balance | 0x7FFF = 32767
-    static final short MAX_BALANCE = 0x7FFF;
+    static final short MAX_BALANCE = Short.MAX_VALUE;
 
     // maximum transaction amount | 0xFF = 255
     static final short MAX_TRANSACTION_AMOUNT = 0xFF;
@@ -74,6 +75,7 @@ public class CardApplet extends Applet {
         // The PIN code is 1234
         byte[] pinCode = {(byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04};
         this.pin.update(pinCode, (short) 0, (byte) pinCode.length);
+        this.generateKeyPair();
     }
 
     /**
@@ -145,6 +147,9 @@ public class CardApplet extends Applet {
      * @throws ISOException if an ISO 7816-4 exception occurs
      */
     public void process(APDU apdu) throws ISOException {
+        // Ignore the applet select command dispached to the process method
+        if (selectingApplet()) ISOException.throwIt(ISO7816.SW_NO_ERROR);
+
         // APDU buffer
         byte[] buffer = apdu.getBuffer();
 
@@ -155,9 +160,14 @@ public class CardApplet extends Applet {
         if (buffer[ISO7816.OFFSET_CLA] != WALLET_CLA) ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
 
         // check the INS byte to determine the operation
+        short bytesLeft = Util.makeShort((byte) 0, buffer[ISO7816.OFFSET_LC]);
+        if (bytesLeft != apdu.setIncomingAndReceive()) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+
+        // check the INS byte to determine the operation
         switch (buffer[ISO7816.OFFSET_INS]) {
-            case GET_BALANCE:
-                this.getBalance(apdu);
+            case NEW_PIN:
+                this.pinValidated();
+                this.pin.update(buffer, ISO7816.OFFSET_CDATA, (byte) 4);
                 break;
             case VERIFY:
                 this.verify(apdu);
@@ -167,6 +177,9 @@ public class CardApplet extends Applet {
                 break;
             case DEBIT:
                 this.debit(apdu);
+                break;
+            case GET_BALANCE:
+                this.getBalance(apdu);
                 break;
             case UNBLOCK:
                 this.pin.resetAndUnblock();
@@ -182,8 +195,6 @@ public class CardApplet extends Applet {
      * @param apdu the incoming <code>APDU</code> object
      */
     private void getBalance(APDU apdu) {
-        this.pinValidated();
-
         // APDU buffer
         byte[] buffer = apdu.getBuffer();
 
@@ -220,7 +231,8 @@ public class CardApplet extends Applet {
         short amount = getAmount(apdu);
 
         // check the balance
-        if ((short) (this.balance + amount) > MAX_BALANCE) ISOException.throwIt(SW_EXCEED_MAXIMUM_BALANCE);
+        if (amount < 0) ISOException.throwIt(SW_INVALID_TRANSACTION_AMOUNT);
+        if (this.balance > (short) (MAX_BALANCE - amount)) ISOException.throwIt(SW_EXCEED_MAXIMUM_BALANCE);
 
         // credit the wallet
         this.balance += amount;
@@ -235,7 +247,8 @@ public class CardApplet extends Applet {
         short amount = getAmount(apdu);
 
         // check the balance
-        if ((short) (this.balance - amount) < 0) ISOException.throwIt(SW_NEGATIVE_BALANCE);
+        if (amount < 0) ISOException.throwIt(SW_INVALID_TRANSACTION_AMOUNT);
+        if (this.balance < amount) ISOException.throwIt(SW_NEGATIVE_BALANCE);
 
         // debit the wallet
         this.balance -= amount;
