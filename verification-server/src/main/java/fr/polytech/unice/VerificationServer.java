@@ -8,7 +8,14 @@ public class VerificationServer {
 
     public static final int SUCCESS = 0x9000;
     private static final byte[] APPLET_AID = new byte[]{(byte) 0xa0, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x10, 0x01};
+
     public static final byte CLA = (byte) 0x42;
+    static final byte NEW_PIN = (byte) 0x10;
+    static final byte VERIFY = (byte) 0x20;
+    static final byte CREDIT = (byte) 0x30;
+    static final byte DEBIT = (byte) 0x40;
+    static final byte GET_BALANCE = (byte) 0x50;
+    static final byte UNBLOCK = (byte) 0x60;
 
     public VerificationServer(int pin) throws Exception {
         // Connect to the card reader
@@ -64,12 +71,12 @@ public class VerificationServer {
 
     private static void initializePIN(CardChannel channel, int pin) throws Exception {
         byte[] pinBytes = new byte[]{(byte) (pin >> 24), (byte) (pin >> 16), (byte) (pin >> 8), (byte) pin};
-        CommandAPDU resetCommand = new CommandAPDU(CLA, 0x60, 0x00, 0x00, 0x00);
+        CommandAPDU resetCommand = new CommandAPDU(CLA, UNBLOCK, 0x00, 0x00, 0x00);
         channel.transmit(resetCommand);
 
         verifyPIN(channel, new byte[]{(byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04});
 
-        CommandAPDU initCommand = new CommandAPDU(CLA, 0x10, 0x00, 0x00, pinBytes);
+        CommandAPDU initCommand = new CommandAPDU(CLA, NEW_PIN, 0x00, 0x00, pinBytes);
         ResponseAPDU response = channel.transmit(initCommand);
 
         if (response.getSW() == SUCCESS) {
@@ -83,7 +90,7 @@ public class VerificationServer {
     }
 
     private static void verifyPIN(CardChannel channel, byte[] pin) throws Exception {
-        CommandAPDU verifyCommand = new CommandAPDU(CLA, 0x20, 0x00, 0x00, pin);
+        CommandAPDU verifyCommand = new CommandAPDU(CLA, VERIFY, 0x00, 0x00, pin);
         ResponseAPDU response = channel.transmit(verifyCommand);
 
         if (response.getSW() == SUCCESS) {
@@ -94,7 +101,7 @@ public class VerificationServer {
     }
 
     private static void getBalance(CardChannel channel) throws Exception {
-        CommandAPDU balanceCommand = new CommandAPDU(CLA, 0x50, 0x00, 0x00, 0);
+        CommandAPDU balanceCommand = new CommandAPDU(CLA, GET_BALANCE, 0x00, 0x00, 0x00);
         ResponseAPDU response = channel.transmit(balanceCommand);
 
         if (response.getSW() == SUCCESS) {
@@ -107,7 +114,7 @@ public class VerificationServer {
     }
 
     private static void signData(CardChannel channel, byte[] data) throws Exception {
-        CommandAPDU signCommand = new CommandAPDU(CLA, 0x60, 0x00, 0x00, data);
+        CommandAPDU signCommand = new CommandAPDU(CLA, UNBLOCK, 0x00, 0x00, data);
         ResponseAPDU response = channel.transmit(signCommand);
 
         if (response.getSW() == SUCCESS) {
