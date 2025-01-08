@@ -1,6 +1,9 @@
 package fr.polytech.unice;
 
 import javax.smartcardio.*;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PublicKey;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
@@ -10,13 +13,21 @@ import static polytech.CardApplet.*;
 public class VerificationServer {
 
     public static final int SUCCESS = 0x9000;
+    public static final int MAX_SIZE = 0xff;
     public static final int ASCII_OFFSET = 48;
     private static final byte[] APPLET_AID = new byte[]{(byte) 0xa0, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x10, 0x01};
+
+    private final CardChannel channel;
+    private final KeyPair keyPair;
 
     public VerificationServer(String pin) throws Exception {
         if (Integer.parseInt(pin) < 0 || Integer.parseInt(pin) > 9999)
             throw new IllegalArgumentException("Invalid PIN. Must be a 4-digit number.");
         else System.out.println("PIN: " + pin);
+
+        KeyPairGenerator rsaGenerator = KeyPairGenerator.getInstance("RSA");
+        rsaGenerator.initialize(512);
+        this.keyPair = rsaGenerator.generateKeyPair();
 
         // Connect to the card reader
         TerminalFactory factory = TerminalFactory.getDefault();
@@ -48,49 +59,23 @@ public class VerificationServer {
         System.out.println("Card inserted.");
 
         // Get the card channel
-        CardChannel channel = card.getBasicChannel();
+        this.channel = card.getBasicChannel();
 
         // Select the applet
-        selectApplet(channel);
-        getPINTries(channel);
-//        tryPIN(channel, stringToBytes(pin));
-//        getPINTries(channel);
-        tryPIN(channel, DEFAULT_PIN);
-        getPINTries(channel);
-        isPINValidated(channel);
+        this.selectApplet();
+        this.tryPIN(DEFAULT_PIN);
+//        this.tryPIN(stringToBytes(pin));
+//        this.getPINTries();
+//        this.isPINValidated();
+
+        this.exchangePublicKeys(this.keyPair.getPublic());
     }
 
-    private static void selectApplet(CardChannel channel) throws Exception {
-        CommandAPDU selectCommand = new CommandAPDU(0x00, 0xA4, 0x04, 0x00, APPLET_AID);
-        ResponseAPDU response = channel.transmit(selectCommand);
-
-        if (response.getSW() == SUCCESS) {
-            System.out.println("Applet selected successfully.");
-        } else {
-            System.err.println("Failed to select applet. SW=" + Integer.toHexString(response.getSW()));
-        }
-    }
-
-    private static void getPINTries(CardChannel channel) throws Exception {
-        CommandAPDU selectCommand = new CommandAPDU(CLA_SECRET_APPLET, INS_GET_PIN_TRIES, 0x00, 0x00, 6);
-        ResponseAPDU response = channel.transmit(selectCommand);
-
-        if (response.getSW() == SUCCESS) {
-            System.out.println("Data received: " + bytesToInt(response.getData()));
-        } else {
-            System.err.println("Failed to get PIN tries. SW=" + Integer.toHexString(response.getSW()));
-        }
-    }
-
-    private static void isPINValidated(CardChannel channel) throws Exception {
-        CommandAPDU selectCommand = new CommandAPDU(CLA_SECRET_APPLET, INS_IS_PIN_VALIDATED, 0x00, 0x00, 6);
-        ResponseAPDU response = channel.transmit(selectCommand);
-
-        if (response.getSW() == SUCCESS) {
-            System.out.println("Data received: " + bytesToBoolean(response.getData()));
-        } else {
-            System.err.println("Failed to validate PIN. SW=" + Integer.toHexString(response.getSW()));
-        }
+    @SuppressWarnings("unused")
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("0x%02X ", b));
+        return sb.toString().trim();
     }
 
     @SuppressWarnings("unused")
@@ -119,10 +104,53 @@ public class VerificationServer {
         return bytes;
     }
 
-    private void tryPIN(CardChannel channel, byte[] bytes) throws Exception {
-        System.out.println("Trying PIN: " + Arrays.toString(bytes));
-        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, bytes, 0, bytes.length);
-        ResponseAPDU response = channel.transmit(command);
+    private void selectApplet() throws Exception {
+        CommandAPDU command = new CommandAPDU(0x00, 0xA4, 0x04, 0x00, APPLET_AID);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("Applet selected successfully.");
+        } else {
+            System.err.println("Failed to select applet. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    private void exchangePublicKeys(PublicKey key) throws Exception {
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_EXCHANGE_PUBLICKEYS, 0x00, 0x00, key.getEncoded(), MAX_SIZE);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("Public Key: " + bytesToHex(response.getData()));
+        } else {
+            System.err.println("Failed to get public key. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    private void getPINTries() throws Exception {
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_GET_PIN_TRIES, 0x00, 0x00, MAX_SIZE);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("PIN Tries left: " + bytesToInt(response.getData()));
+        } else {
+            System.err.println("Failed to get PIN tries. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    private void isPINValidated() throws Exception {
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_IS_PIN_VALIDATED, 0x00, 0x00, MAX_SIZE);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("PIN is Validated: " + bytesToBoolean(response.getData()));
+        } else {
+            System.err.println("Failed to validate PIN. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    private void tryPIN(byte[] bytes) throws Exception {
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, bytes);
+        ResponseAPDU response = this.channel.transmit(command);
 
         if (response.getSW() == SUCCESS) {
             System.out.println("PIN validated successfully.");

@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Update Card" type="CompoundRunConfigurationType">
+    <toRun name="Compile Applet" type="AntRunConfiguration" />
+    <toRun name="Upload" type="ShConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>

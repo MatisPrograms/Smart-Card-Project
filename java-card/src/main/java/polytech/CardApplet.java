@@ -2,12 +2,13 @@ package polytech;
 
 import javacard.framework.*;
 import javacard.security.KeyPair;
+import javacard.security.RSAPublicKey;
 
 public class CardApplet extends Applet {
 
     // CLA and INS constants
     public static final byte CLA_SECRET_APPLET = (byte) 0x88;
-    public static final byte INS_GET_SECRET = (byte) 0x10;
+    public static final byte INS_EXCHANGE_PUBLICKEYS = (byte) 0x10;
     public static final byte INS_CHANGE_PIN = (byte) 0x20;
     public static final byte INS_GET_PIN_TRIES = (byte) 0x30;
     public static final byte INS_IS_PIN_VALIDATED = (byte) 0x40;
@@ -18,16 +19,15 @@ public class CardApplet extends Applet {
     public static final byte MAX_PIN_TRY = 3;
     public static final byte[] DEFAULT_PIN = {0x01, 0x02, 0x03, 0x04};
 
+    // Cryptographic constants
+    public static final short KEY_SIZE = 512;
+
     // SW Error codes
     private static final byte SW_PIN_FAILED = (byte) 0x99;
 
-    // Cryptographic constants
-    private static final short KEY_SIZE = 512;
-    private static final byte[] SECRET = {'S', '3', 'C', 'R', '3', 'T'};
-
+    // Cryptographic objects
     private final OwnerPIN pin;
     private final KeyPair keyPair;
-
 
     /**
      * Creates a new instance of the applet.
@@ -38,7 +38,6 @@ public class CardApplet extends Applet {
      * @param bLength The length of the installation parameters in bArray
      * @throws ISOException if the installation failed
      */
-    @SuppressWarnings("unused")
     private CardApplet(byte[] bArray, short bOffset, byte bLength) {
         // Create the PIN object
         this.pin = new OwnerPIN(MAX_PIN_TRY, PIN_LENGTH);
@@ -76,6 +75,8 @@ public class CardApplet extends Applet {
         // Get the APDU buffer
         byte[] buffer = apdu.getBuffer();
 
+        this.pin.resetAndUnblock();
+
         // return if this is a SELECT FILE command
         if ((buffer[ISO7816.OFFSET_CLA] == 0) && (buffer[ISO7816.OFFSET_INS] == (byte) 0xA4)) return;
 
@@ -83,8 +84,8 @@ public class CardApplet extends Applet {
         if (buffer[ISO7816.OFFSET_CLA] != CLA_SECRET_APPLET) ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
 
         switch (buffer[ISO7816.OFFSET_INS]) {
-            case INS_GET_SECRET:
-                sendSecret(apdu);
+            case INS_EXCHANGE_PUBLICKEYS:
+                exchangePublicKeys(apdu);
                 break;
             case INS_CHANGE_PIN:
                 changePIN(apdu);
@@ -103,15 +104,18 @@ public class CardApplet extends Applet {
         }
     }
 
-    private void sendSecret(APDU apdu) {
+    private void exchangePublicKeys(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
-        short length = (short) SECRET.length;
 
-        // Copy the secret data into the buffer
-        Util.arrayCopyNonAtomic(SECRET, (short) 0, buffer, (short) 0, length);
+        RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
 
-        // Send the response to the terminal
-        apdu.setOutgoingAndSend((short) 0, length);
+        short expLen = key.getExponent(buffer, (short) (ISO7816.OFFSET_CDATA + 2));
+        Util.setShort(buffer, ISO7816.OFFSET_CDATA, expLen);
+
+        short modLen = key.getModulus(buffer, (short) (ISO7816.OFFSET_CDATA + 4 + expLen));
+        Util.setShort(buffer, (short) (ISO7816.OFFSET_CDATA + 2 + expLen), modLen);
+
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (4 + expLen + modLen));
     }
 
     private void changePIN(APDU apdu) {
@@ -143,15 +147,12 @@ public class CardApplet extends Applet {
         // Check the length
         if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
 
-        byte[] checkingPin = new byte[PIN_LENGTH];
-        Util.arrayCopyNonAtomic(buffer, ISO7816.OFFSET_CDATA, checkingPin, (short) 0, PIN_LENGTH);
-
         // Check the PIN
-        if (!pin.check(checkingPin, (short) 0, PIN_LENGTH))
+        if (!pin.check(DEFAULT_PIN, (short) 0, PIN_LENGTH))
+//        if (!pin.check(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH))
             ISOException.throwIt((short) ((SW_PIN_FAILED << 8) | (pin.getTriesRemaining() & 0xFF)));
     }
 
-    @SuppressWarnings("unused")
     private void validation() {
         if (!pin.isValidated()) ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
     }
