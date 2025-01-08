@@ -1,6 +1,3 @@
-mode_201
-enable_trace
-enable_timer
 establish_context
 card_connect
 select -AID A000000018434D00

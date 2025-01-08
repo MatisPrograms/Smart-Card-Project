@@ -1,23 +1,23 @@
 package fr.polytech.unice;
 
 import javax.smartcardio.*;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
+
+import static polytech.CardApplet.*;
 
 public class VerificationServer {
 
     public static final int SUCCESS = 0x9000;
+    public static final int ASCII_OFFSET = 48;
     private static final byte[] APPLET_AID = new byte[]{(byte) 0xa0, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x10, 0x01};
 
-    public static final byte CLA = (byte) 0x42;
-    static final byte NEW_PIN = (byte) 0x10;
-    static final byte VERIFY = (byte) 0x20;
-    static final byte CREDIT = (byte) 0x30;
-    static final byte DEBIT = (byte) 0x40;
-    static final byte GET_BALANCE = (byte) 0x50;
-    static final byte UNBLOCK = (byte) 0x60;
+    public VerificationServer(String pin) throws Exception {
+        if (Integer.parseInt(pin) < 0 || Integer.parseInt(pin) > 9999)
+            throw new IllegalArgumentException("Invalid PIN. Must be a 4-digit number.");
+        else System.out.println("PIN: " + pin);
 
-    public VerificationServer(int pin) throws Exception {
         // Connect to the card reader
         TerminalFactory factory = TerminalFactory.getDefault();
         List<CardTerminal> terminals = factory.terminals().list();
@@ -52,10 +52,12 @@ public class VerificationServer {
 
         // Select the applet
         selectApplet(channel);
-
-        // Initialize the PIN
-//        initializePIN(channel, pin);
-        getBalance(channel);
+        getPINTries(channel);
+//        tryPIN(channel, stringToBytes(pin));
+//        getPINTries(channel);
+        tryPIN(channel, DEFAULT_PIN);
+        getPINTries(channel);
+        isPINValidated(channel);
     }
 
     private static void selectApplet(CardChannel channel) throws Exception {
@@ -65,69 +67,67 @@ public class VerificationServer {
         if (response.getSW() == SUCCESS) {
             System.out.println("Applet selected successfully.");
         } else {
-            throw new Exception("Failed to select applet. SW=" + Integer.toHexString(response.getSW()));
+            System.err.println("Failed to select applet. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 
-    private static void initializePIN(CardChannel channel, int pin) throws Exception {
-        byte[] pinBytes = new byte[]{(byte) (pin >> 24), (byte) (pin >> 16), (byte) (pin >> 8), (byte) pin};
-        CommandAPDU resetCommand = new CommandAPDU(CLA, UNBLOCK, 0x00, 0x00, 0x00);
-        channel.transmit(resetCommand);
-
-        verifyPIN(channel, new byte[]{(byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04});
-
-        CommandAPDU initCommand = new CommandAPDU(CLA, NEW_PIN, 0x00, 0x00, pinBytes);
-        ResponseAPDU response = channel.transmit(initCommand);
+    private static void getPINTries(CardChannel channel) throws Exception {
+        CommandAPDU selectCommand = new CommandAPDU(CLA_SECRET_APPLET, INS_GET_PIN_TRIES, 0x00, 0x00, 6);
+        ResponseAPDU response = channel.transmit(selectCommand);
 
         if (response.getSW() == SUCCESS) {
-            System.out.println("PIN initialized successfully.");
-            verifyPIN(channel, pinBytes);
-            getBalance(channel);
-            signData(channel, new byte[]{0x01, 0x02, 0x03, 0x04});
+            System.out.println("Data received: " + bytesToInt(response.getData()));
         } else {
-            throw new Exception("Failed to initialize PIN. SW=" + Integer.toHexString(response.getSW()));
+            System.err.println("Failed to get PIN tries. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 
-    private static void verifyPIN(CardChannel channel, byte[] pin) throws Exception {
-        CommandAPDU verifyCommand = new CommandAPDU(CLA, VERIFY, 0x00, 0x00, pin);
-        ResponseAPDU response = channel.transmit(verifyCommand);
+    private static void isPINValidated(CardChannel channel) throws Exception {
+        CommandAPDU selectCommand = new CommandAPDU(CLA_SECRET_APPLET, INS_IS_PIN_VALIDATED, 0x00, 0x00, 6);
+        ResponseAPDU response = channel.transmit(selectCommand);
 
         if (response.getSW() == SUCCESS) {
-            System.out.println("PIN verified successfully.");
+            System.out.println("Data received: " + bytesToBoolean(response.getData()));
         } else {
-            throw new Exception("Failed to verify PIN. SW=" + Integer.toHexString(response.getSW()));
+            System.err.println("Failed to validate PIN. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 
-    private static void getBalance(CardChannel channel) throws Exception {
-        CommandAPDU balanceCommand = new CommandAPDU(CLA, GET_BALANCE, 0x00, 0x00, 0x00);
-        ResponseAPDU response = channel.transmit(balanceCommand);
-
-        if (response.getSW() == SUCCESS) {
-            byte[] data = response.getData();
-            short balance = (short) ((data[0] << 8) | (data[1] & 0xFF));
-            System.out.println("Current balance: " + balance);
-        } else {
-            throw new Exception("Failed to get balance. SW=" + Integer.toHexString(response.getSW()));
-        }
-    }
-
-    private static void signData(CardChannel channel, byte[] data) throws Exception {
-        CommandAPDU signCommand = new CommandAPDU(CLA, UNBLOCK, 0x00, 0x00, data);
-        ResponseAPDU response = channel.transmit(signCommand);
-
-        if (response.getSW() == SUCCESS) {
-            byte[] signedData = response.getData();
-            System.out.println("Signed data: " + bytesToHex(signedData));
-        } else {
-            throw new Exception("Failed to sign data. SW=" + Integer.toHexString(response.getSW()));
-        }
-    }
-
-    private static String bytesToHex(byte[] bytes) {
+    @SuppressWarnings("unused")
+    private static String bytesToString(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) sb.append(String.format("%02X", b));
+        for (byte b : bytes) sb.append((char) b);
         return sb.toString();
+    }
+
+    @SuppressWarnings("unused")
+    private static int bytesToInt(byte[] bytes) {
+        int value = 0;
+        for (int index = 0; index < bytes.length; index++) value += bytes[index] << (8 * index);
+        return value;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean bytesToBoolean(byte[] bytes) {
+        return bytes.length > 0 && bytes[0] == 0x01;
+    }
+
+    @SuppressWarnings("unused")
+    private static byte[] stringToBytes(String str) {
+        byte[] bytes = new byte[str.length()];
+        for (int i = 0; i < str.length(); i++) bytes[i] = (byte) (str.charAt(i) - ASCII_OFFSET);
+        return bytes;
+    }
+
+    private void tryPIN(CardChannel channel, byte[] bytes) throws Exception {
+        System.out.println("Trying PIN: " + Arrays.toString(bytes));
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, bytes, 0, bytes.length);
+        ResponseAPDU response = channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("PIN validated successfully.");
+        } else {
+            System.err.println("Failed to validate PIN. SW=" + Integer.toHexString(response.getSW()));
+        }
     }
 }

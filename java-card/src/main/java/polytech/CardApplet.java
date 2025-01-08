@@ -2,63 +2,32 @@ package polytech;
 
 import javacard.framework.*;
 import javacard.security.KeyPair;
-import javacard.security.RSAPrivateCrtKey;
-import javacard.security.RSAPublicKey;
-import javacardx.crypto.Cipher;
 
 public class CardApplet extends Applet {
 
-    // codes of CLA byte in the command APDU header
-    static final byte WALLET_CLA = (byte) 0x42;
+    // CLA and INS constants
+    public static final byte CLA_SECRET_APPLET = (byte) 0x88;
+    public static final byte INS_GET_SECRET = (byte) 0x10;
+    public static final byte INS_CHANGE_PIN = (byte) 0x20;
+    public static final byte INS_GET_PIN_TRIES = (byte) 0x30;
+    public static final byte INS_IS_PIN_VALIDATED = (byte) 0x40;
+    public static final byte INS_VALIDATE_PIN = (byte) 0x50;
 
-    // codes of INS byte in the command APDU header
-    static final byte NEW_PIN = (byte) 0x10;
-    static final byte VERIFY = (byte) 0x20;
-    static final byte CREDIT = (byte) 0x30;
-    static final byte DEBIT = (byte) 0x40;
-    static final byte GET_BALANCE = (byte) 0x50;
-    static final byte UNBLOCK = (byte) 0x60;
+    // PIN constants
+    public static final byte PIN_LENGTH = 4;
+    public static final byte MAX_PIN_TRY = 3;
+    public static final byte[] DEFAULT_PIN = {0x01, 0x02, 0x03, 0x04};
 
-    // maximum balance | 0x7FFF = 32767
-    static final short MAX_BALANCE = Short.MAX_VALUE;
+    // SW Error codes
+    private static final byte SW_PIN_FAILED = (byte) 0x99;
 
-    // maximum transaction amount | 0xFF = 255
-    static final short MAX_TRANSACTION_AMOUNT = 0xFF;
+    // Cryptographic constants
+    private static final short KEY_SIZE = 512;
+    private static final byte[] SECRET = {'S', '3', 'C', 'R', '3', 'T'};
 
-    // maximum number of incorrect tries before the PIN is blocked | 0x03 = 3
-    static final byte PIN_TRY_LIMIT = (byte) 0x03;
+    private final OwnerPIN pin;
+    private final KeyPair keyPair;
 
-    // maximum size PIN | 0x04 = 4
-    static final byte MAX_PIN_SIZE = (byte) 0x04;
-
-    // signal that the PIN verification failed
-    static final short SW_VERIFICATION_FAILED = 0x6312;
-
-    // signal the PIN validation is required for a credit or a debit transaction
-    static final short SW_PIN_VERIFICATION_REQUIRED = 0x6311;
-
-    // signal invalid transaction amount | amount > MAX_TRANSACTION_AMOUNT or amount < 0
-    static final short SW_INVALID_TRANSACTION_AMOUNT = 0x6A83;
-
-    // signal that the balance exceed the maximum
-    static final short SW_EXCEED_MAXIMUM_BALANCE = 0x6A84;
-
-    // signal the balance becomes negative
-    static final short SW_NEGATIVE_BALANCE = 0x6A85;
-
-    // RSA key size
-    static final short KEY_BITS = 512;
-    private static final byte[] ASN1_SHA256 = {
-            (byte) 0x30, (byte) 0x31, (byte) 0x30, (byte) 0x0d, (byte) 0x06, (byte) 0x09, (byte) 0x60,
-            (byte) 0x86, (byte) 0x48, (byte) 0x01, (byte) 0x65, (byte) 0x03, (byte) 0x04, (byte) 0x02,
-            (byte) 0x01, (byte) 0x05, (byte) 0x00, (byte) 0x04, (byte) 0x20
-    };
-    // instance of the PIN
-    OwnerPIN pin;
-    // balance of the wallet
-    short balance;
-    // RSA key pair
-    private KeyPair keyPair;
 
     /**
      * Creates a new instance of the applet.
@@ -69,13 +38,17 @@ public class CardApplet extends Applet {
      * @param bLength The length of the installation parameters in bArray
      * @throws ISOException if the installation failed
      */
+    @SuppressWarnings("unused")
     private CardApplet(byte[] bArray, short bOffset, byte bLength) {
-        this.pin = new OwnerPIN(PIN_TRY_LIMIT, MAX_PIN_SIZE);
+        // Create the PIN object
+        this.pin = new OwnerPIN(MAX_PIN_TRY, PIN_LENGTH);
 
-        // The PIN code is 1234
-        byte[] pinCode = {(byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04};
-        this.pin.update(pinCode, (short) 0, (byte) pinCode.length);
-        this.generateKeyPair();
+        // Set the default PIN
+        this.pin.update(DEFAULT_PIN, (short) 0, PIN_LENGTH);
+
+        // Generate the key pair
+        this.keyPair = new KeyPair(KeyPair.ALG_RSA, KEY_SIZE);
+        this.keyPair.genKeyPair();
     }
 
     /**
@@ -90,56 +63,6 @@ public class CardApplet extends Applet {
         new CardApplet(bArray, bOffset, bLength).register();
     }
 
-    private void generateKeyPair() {
-        this.keyPair = new KeyPair(KeyPair.ALG_RSA, KEY_BITS);
-        this.keyPair.genKeyPair();
-    }
-
-    /**
-     * Selects the applet.
-     *
-     * @return <code>true</code> if the applet is selected, <code>false</code> otherwise
-     */
-    public boolean select() {
-        return this.pin.getTriesRemaining() != 0;
-    }
-
-    /**
-     * Deselects the applet and resets the PIN.
-     */
-    public void deselect() {
-        this.pin.reset();
-    }
-
-    /**
-     * Validates the PIN code.
-     */
-    private void pinValidated() {
-        if (!this.pin.isValidated()) ISOException.throwIt(SW_PIN_VERIFICATION_REQUIRED);
-    }
-
-    /**
-     * Retrieves the amount from the APDU buffer.
-     *
-     * @param apdu the incoming <code>APDU</code> object
-     * @return the amount
-     */
-    private short getAmount(APDU apdu) {
-        this.pinValidated();
-
-        // APDU buffer
-        byte[] buffer = apdu.getBuffer();
-
-        // retrieve the credit amount
-        byte byteRead = (byte) (apdu.setIncomingAndReceive());
-        if (byteRead != 1) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-        short amount = Util.makeShort((byte) 0, buffer[ISO7816.OFFSET_CDATA]);
-
-        // check the amount
-        if (amount > MAX_TRANSACTION_AMOUNT || amount < 0) ISOException.throwIt(SW_INVALID_TRANSACTION_AMOUNT);
-        return amount;
-    }
-
     /**
      * Processes an incoming APDU.
      *
@@ -147,148 +70,89 @@ public class CardApplet extends Applet {
      * @throws ISOException if an ISO 7816-4 exception occurs
      */
     public void process(APDU apdu) throws ISOException {
-        // Ignore the applet select command dispached to the process method
+        // ignore if the applet is being selected
         if (selectingApplet()) ISOException.throwIt(ISO7816.SW_NO_ERROR);
 
-        // APDU buffer
+        // Get the APDU buffer
         byte[] buffer = apdu.getBuffer();
 
-        // check SELECT APDU command
-        if (buffer[ISO7816.OFFSET_CLA] == 0 && buffer[ISO7816.OFFSET_INS] == (byte) 0xA4) return;
+        // return if this is a SELECT FILE command
+        if ((buffer[ISO7816.OFFSET_CLA] == 0) && (buffer[ISO7816.OFFSET_INS] == (byte) 0xA4)) return;
 
-        // verify the CLA byte
-        if (buffer[ISO7816.OFFSET_CLA] != WALLET_CLA) ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+        // throw exception if the CLA byte is not ours
+        if (buffer[ISO7816.OFFSET_CLA] != CLA_SECRET_APPLET) ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
 
-        // check the INS byte to determine the operation
-        short bytesLeft = Util.makeShort((byte) 0, buffer[ISO7816.OFFSET_LC]);
-        if (bytesLeft != apdu.setIncomingAndReceive()) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-
-        // check the INS byte to determine the operation
         switch (buffer[ISO7816.OFFSET_INS]) {
-            case NEW_PIN:
-                this.pinValidated();
-                this.pin.update(buffer, ISO7816.OFFSET_CDATA, (byte) 4);
+            case INS_GET_SECRET:
+                sendSecret(apdu);
                 break;
-            case VERIFY:
-                this.verify(apdu);
+            case INS_CHANGE_PIN:
+                changePIN(apdu);
                 break;
-            case CREDIT:
-                this.credit(apdu);
+            case INS_GET_PIN_TRIES:
+                getPINTries(apdu);
                 break;
-            case DEBIT:
-                this.debit(apdu);
+            case INS_IS_PIN_VALIDATED:
+                isPINValidated(apdu);
                 break;
-            case GET_BALANCE:
-                this.getBalance(apdu);
-                break;
-            case UNBLOCK:
-                this.pin.resetAndUnblock();
+            case INS_VALIDATE_PIN:
+                validatePIN(apdu);
                 break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         }
     }
 
-    /**
-     * Retrieves the balance of the wallet.
-     *
-     * @param apdu the incoming <code>APDU</code> object
-     */
-    private void getBalance(APDU apdu) {
-        // APDU buffer
+    private void sendSecret(APDU apdu) {
+        byte[] buffer = apdu.getBuffer();
+        short length = (short) SECRET.length;
+
+        // Copy the secret data into the buffer
+        Util.arrayCopyNonAtomic(SECRET, (short) 0, buffer, (short) 0, length);
+
+        // Send the response to the terminal
+        apdu.setOutgoingAndSend((short) 0, length);
+    }
+
+    private void changePIN(APDU apdu) {
+//        this.validation();
         byte[] buffer = apdu.getBuffer();
 
-        // set the outgoing data length
-        short le = apdu.setOutgoing();
-        if (le < 2) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        // Verify the given PIN
+        if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
 
-        // send the balance
-        apdu.setOutgoingLength((byte) 2);
-        Util.setShort(buffer, (short) 0, this.balance);
-        apdu.sendBytes((short) 0, (short) 2);
+        // Check the PIN
+        pin.update(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH);
     }
 
-    /**
-     * Verifies the PIN code.
-     *
-     * @param apdu the incoming <code>APDU</code> object
-     */
-    private void verify(APDU apdu) {
-        // APDU buffer
+    private void getPINTries(APDU apdu) {
+        byte[] buffer = apdu.getBuffer();
+        buffer[0] = pin.getTriesRemaining();
+        apdu.setOutgoingAndSend((short) 0, (short) 1);
+    }
+
+    private void isPINValidated(APDU apdu) {
+        byte[] buffer = apdu.getBuffer();
+        buffer[0] = pin.isValidated() ? (byte) 0x01 : (byte) 0x00;
+        apdu.setOutgoingAndSend((short) 0, (short) 1);
+    }
+
+    private void validatePIN(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
 
-        // retrieve the PIN data
-        byte byteRead = (byte) (apdu.setIncomingAndReceive());
-        if (!this.pin.check(buffer, ISO7816.OFFSET_CDATA, byteRead)) ISOException.throwIt(SW_VERIFICATION_FAILED);
+        // Check the length
+        if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+
+        byte[] checkingPin = new byte[PIN_LENGTH];
+        Util.arrayCopyNonAtomic(buffer, ISO7816.OFFSET_CDATA, checkingPin, (short) 0, PIN_LENGTH);
+
+        // Check the PIN
+        if (!pin.check(checkingPin, (short) 0, PIN_LENGTH))
+            ISOException.throwIt((short) ((SW_PIN_FAILED << 8) | (pin.getTriesRemaining() & 0xFF)));
     }
 
-    /**
-     * Credits the wallet.
-     *
-     * @param apdu the incoming <code>APDU</code> object
-     */
-    private void credit(APDU apdu) {
-        short amount = getAmount(apdu);
-
-        // check the balance
-        if (amount < 0) ISOException.throwIt(SW_INVALID_TRANSACTION_AMOUNT);
-        if (this.balance > (short) (MAX_BALANCE - amount)) ISOException.throwIt(SW_EXCEED_MAXIMUM_BALANCE);
-
-        // credit the wallet
-        this.balance += amount;
-    }
-
-    /**
-     * Debits the wallet.
-     *
-     * @param apdu the incoming <code>APDU</code> object
-     */
-    private void debit(APDU apdu) {
-        short amount = getAmount(apdu);
-
-        // check the balance
-        if (amount < 0) ISOException.throwIt(SW_INVALID_TRANSACTION_AMOUNT);
-        if (this.balance < amount) ISOException.throwIt(SW_NEGATIVE_BALANCE);
-
-        // debit the wallet
-        this.balance -= amount;
-    }
-
-    // sign the datasent by the client using the private key 
-    private void sign(APDU apdu) {
-        byte[] buffer = apdu.getBuffer();
-        Cipher cipher = Cipher.getInstance(Cipher.ALG_RSA_PKCS1, false);
-        cipher.init(keyPair.getPrivate(), Cipher.MODE_ENCRYPT);
-        short inputLength = buffer[ISO7816.OFFSET_LC];
-        byte[] markedData = new byte[(short) (inputLength + ASN1_SHA256.length)];
-        Util.arrayCopy(ASN1_SHA256, (short) 0, markedData, (short) 0, (short) ASN1_SHA256.length);
-        Util.arrayCopy(buffer, ISO7816.OFFSET_CDATA, markedData, (short) ASN1_SHA256.length, inputLength);
-        byte dataLength = buffer[ISO7816.OFFSET_LC];
-        short outLength = cipher.doFinal(markedData, (short) 0, (short) markedData.length, buffer, ISO7816.OFFSET_CDATA);
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, outLength);
-    }
-
-    // send back the public key to the client 
-    private void getPublicKey(APDU apdu) {
-        byte[] buffer = apdu.getBuffer();
-        short offset = ISO7816.OFFSET_CDATA;
-        RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
-        short expLen = key.getExponent(buffer, (short) (offset + 2));
-        Util.setShort(buffer, offset, expLen);
-        short modLen = key.getModulus(buffer, (short) (offset + 4 + expLen));
-        Util.setShort(buffer, (short) (offset + 2 + expLen), modLen);
-        apdu.setOutgoingAndSend(offset, (short) (4 + expLen + modLen));
-    }
-
-    // get private key from the client 
-    private void getPrivateKey(APDU apdu) {
-        byte[] buffer = apdu.getBuffer();
-        short offset = ISO7816.OFFSET_CDATA;
-        RSAPrivateCrtKey key = (RSAPrivateCrtKey) keyPair.getPrivate();
-        short pLen = key.getP(buffer, (short) (offset + 2));
-        Util.setShort(buffer, offset, pLen);
-        short qLen = key.getQ(buffer, (short) (offset + 4 + pLen));
-        Util.setShort(buffer, (short) (offset + 2 + pLen), qLen);
-        apdu.setOutgoingAndSend(offset, (short) (4 + pLen + qLen));
+    @SuppressWarnings("unused")
+    private void validation() {
+        if (!pin.isValidated()) ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
     }
 }

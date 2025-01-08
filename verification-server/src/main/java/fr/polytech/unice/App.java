@@ -8,8 +8,7 @@ import java.util.Arrays;
 public class App {
     public static void main(String[] args) throws Exception {
         int pinIndex = Arrays.asList(args).indexOf("--pin") + 1;
-        int pin = Integer.parseInt(pinIndex >= args.length ? "1234" : args[pinIndex]);
-        System.out.println("PIN: " + pin);
+        String pin = pinIndex >= args.length ? "1234" : args[pinIndex];
         new VerificationServer(pin);
     }
 }

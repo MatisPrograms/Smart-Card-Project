@@ -1,6 +1,3 @@
-mode_201
-gemXpressoPro
-enable_trace
 establish_context
 card_connect
 select -AID A000000018434D
