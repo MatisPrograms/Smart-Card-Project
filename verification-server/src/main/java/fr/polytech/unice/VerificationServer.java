@@ -1,9 +1,12 @@
 package fr.polytech.unice;
 
 import javax.smartcardio.*;
+import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.RSAPublicKeySpec;
 import java.util.List;
 import java.util.Scanner;
 
@@ -18,6 +21,7 @@ public class VerificationServer {
 
     private final CardChannel channel;
     private final KeyPair keyPair;
+    private RSAPublicKeySpec cardsPublicKey;
 
     public VerificationServer(String pin) throws Exception {
         if (Integer.parseInt(pin) < 0 || Integer.parseInt(pin) > 9999)
@@ -25,7 +29,7 @@ public class VerificationServer {
         else System.out.println("PIN: " + pin);
 
         KeyPairGenerator rsaGenerator = KeyPairGenerator.getInstance("RSA");
-        rsaGenerator.initialize(512);
+        rsaGenerator.initialize(KEY_SIZE);
         this.keyPair = rsaGenerator.generateKeyPair();
 
         // Connect to the card reader
@@ -67,7 +71,7 @@ public class VerificationServer {
         byte[] newPIN = stringToBytes(pin);
         if (!this.tryPIN(newPIN)) {
             System.out.println("PIN is not set. Setting PIN...");
-            if (!this.tryPIN(DEFAULT_PIN)) throw new Exception("Java Card blocked.");
+            if (!this.tryPIN(DEFAULT_PIN)) throw new Exception("Please reset the card.");
             this.changePIN(newPIN);
             this.tryPIN(newPIN);
             this.getPINStatus();
@@ -109,6 +113,19 @@ public class VerificationServer {
         return bytes;
     }
 
+    @SuppressWarnings("unused")
+    private static byte[] buildPublicKeyArray(byte[] array1, byte[] array2, short lc) {
+        byte[] result = new byte[array1.length + array2.length + 2 * lc];
+        result[0] = (byte) (array1.length >> 8);
+        result[1] = (byte) array1.length;
+        System.arraycopy(array1, 0, result, lc, array1.length);
+
+        result[array1.length + lc] = (byte) (array2.length >> 8);
+        result[array1.length + lc + 1] = (byte) array2.length;
+        System.arraycopy(array2, 0, result, 2 * lc + array1.length, array2.length);
+        return result;
+    }
+
     private void selectApplet() throws Exception {
         CommandAPDU command = new CommandAPDU(0x00, 0xA4, 0x04, 0x00, APPLET_AID);
         ResponseAPDU response = this.channel.transmit(command);
@@ -121,12 +138,25 @@ public class VerificationServer {
     }
 
     private void exchangePublicKeys(PublicKey key) throws Exception {
-        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_EXCHANGE_PUBLICKEYS, 0x00, 0x00, key.getEncoded(), MAX_SIZE);
+        short lc = 2;
+
+        RSAPublicKey publicKey = (RSAPublicKey) this.keyPair.getPublic();
+        byte[] rsaPublicKey = buildPublicKeyArray(publicKey.getPublicExponent().toByteArray(), publicKey.getModulus().toByteArray(), lc);
+
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_EXCHANGE_PUBLICKEYS, 0x00, 0x00, rsaPublicKey, MAX_SIZE);
         ResponseAPDU response = this.channel.transmit(command);
 
         if (response.getSW() == SUCCESS) {
-            System.out.println("Server's Public Key: " + key.getEncoded().length + " | " + bytesToHex(key.getEncoded()));
-            System.out.println("Card's Public Key: " + bytesToHex(response.getData()));
+            System.out.println("Server's Public Key: " + rsaPublicKey.length + " | " + bytesToHex(rsaPublicKey));
+            System.out.println("Card's Public Key: " + response.getData().length + " | " + bytesToHex(response.getData()));
+
+            short expLen = (short) ((response.getData()[0] << 8) | (response.getData()[1] & 0xff));
+            short modLen = (short) ((response.getData()[2 + expLen] << 8) | (response.getData()[3 + expLen] & 0xff));
+
+            BigInteger exponent = new BigInteger(1, response.getData(), lc, expLen);
+            BigInteger modulus = new BigInteger(1, response.getData(), 2 * lc + expLen, modLen);
+
+            this.cardsPublicKey = new RSAPublicKeySpec(modulus, exponent);
         } else {
             System.err.println("Failed to exchange public keys. SW=" + Integer.toHexString(response.getSW()));
         }

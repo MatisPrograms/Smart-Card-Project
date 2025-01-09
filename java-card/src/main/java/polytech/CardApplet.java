@@ -1,6 +1,7 @@
 package polytech;
 
 import javacard.framework.*;
+import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.RSAPublicKey;
 
@@ -28,6 +29,7 @@ public class CardApplet extends Applet {
     // Cryptographic objects
     private final OwnerPIN pin;
     private final KeyPair keyPair;
+    private RSAPublicKey serversPublicKey;
 
     /**
      * Creates a new instance of the applet.
@@ -105,17 +107,28 @@ public class CardApplet extends Applet {
     private void exchangePublicKeys(APDU apdu) {
         this.validation();
         byte[] buffer = apdu.getBuffer();
-        apdu.setIncomingAndReceive();
 
+        apdu.setIncomingAndReceive();
+        short lc = 2;
+
+        // Store the server's public key
+        short expLenServer = Util.getShort(buffer, ISO7816.OFFSET_CDATA);
+        short modLenServer = Util.getShort(buffer, (short) (ISO7816.OFFSET_CDATA + lc + expLenServer));
+
+        this.serversPublicKey = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KEY_SIZE, false);
+        this.serversPublicKey.setExponent(buffer, (short) (ISO7816.OFFSET_CDATA + lc), expLenServer);
+        this.serversPublicKey.setModulus(buffer, (short) (ISO7816.OFFSET_CDATA + 2 * lc + expLenServer), modLenServer);
+
+        // Send the card's public key
         RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
 
-        short expLen = key.getExponent(buffer, (short) (ISO7816.OFFSET_CDATA + 2));
-        Util.setShort(buffer, ISO7816.OFFSET_CDATA, expLen);
+        short expLenCard = key.getExponent(buffer, (short) (ISO7816.OFFSET_CDATA + lc));
+        Util.setShort(buffer, ISO7816.OFFSET_CDATA, expLenCard);
 
-        short modLen = key.getModulus(buffer, (short) (ISO7816.OFFSET_CDATA + 4 + expLen));
-        Util.setShort(buffer, (short) (ISO7816.OFFSET_CDATA + 2 + expLen), modLen);
+        short modLenCard = key.getModulus(buffer, (short) (ISO7816.OFFSET_CDATA + 2 * lc + expLenCard));
+        Util.setShort(buffer, (short) (ISO7816.OFFSET_CDATA + lc + expLenCard), modLenCard);
 
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (4 + expLen + modLen));
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (2 * lc + expLenCard + modLenCard));
     }
 
     private void changePIN(APDU apdu) {
