@@ -4,7 +4,6 @@ import javax.smartcardio.*;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 
@@ -63,10 +62,16 @@ public class VerificationServer {
 
         // Select the applet
         this.selectApplet();
-        this.tryPIN(DEFAULT_PIN);
-//        this.tryPIN(stringToBytes(pin));
-//        this.getPINTries();
-//        this.isPINValidated();
+
+        // Set the PIN to the card
+        byte[] newPIN = stringToBytes(pin);
+        if (!this.tryPIN(newPIN)) {
+            System.out.println("PIN is not set. Setting PIN...");
+            if (!this.tryPIN(DEFAULT_PIN)) throw new Exception("Java Card blocked.");
+            this.changePIN(newPIN);
+            this.tryPIN(newPIN);
+            this.getPINStatus();
+        }
 
         this.exchangePublicKeys(this.keyPair.getPublic());
     }
@@ -120,13 +125,14 @@ public class VerificationServer {
         ResponseAPDU response = this.channel.transmit(command);
 
         if (response.getSW() == SUCCESS) {
-            System.out.println("Public Key: " + bytesToHex(response.getData()));
+            System.out.println("Server's Public Key: " + key.getEncoded().length + " | " + bytesToHex(key.getEncoded()));
+            System.out.println("Card's Public Key: " + bytesToHex(response.getData()));
         } else {
-            System.err.println("Failed to get public key. SW=" + Integer.toHexString(response.getSW()));
+            System.err.println("Failed to exchange public keys. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 
-    private void getPINTries() throws Exception {
+    private void getPINStatus() throws Exception {
         CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_GET_PIN_TRIES, 0x00, 0x00, MAX_SIZE);
         ResponseAPDU response = this.channel.transmit(command);
 
@@ -135,11 +141,9 @@ public class VerificationServer {
         } else {
             System.err.println("Failed to get PIN tries. SW=" + Integer.toHexString(response.getSW()));
         }
-    }
 
-    private void isPINValidated() throws Exception {
-        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_IS_PIN_VALIDATED, 0x00, 0x00, MAX_SIZE);
-        ResponseAPDU response = this.channel.transmit(command);
+        command = new CommandAPDU(CLA_SECRET_APPLET, INS_IS_PIN_VALIDATED, 0x00, 0x00, MAX_SIZE);
+        response = this.channel.transmit(command);
 
         if (response.getSW() == SUCCESS) {
             System.out.println("PIN is Validated: " + bytesToBoolean(response.getData()));
@@ -148,14 +152,28 @@ public class VerificationServer {
         }
     }
 
-    private void tryPIN(byte[] bytes) throws Exception {
-        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, bytes);
+    private boolean tryPIN(byte[] pin) throws Exception {
+        System.out.println("Trying PIN..." + bytesToHex(pin));
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, pin);
         ResponseAPDU response = this.channel.transmit(command);
 
         if (response.getSW() == SUCCESS) {
             System.out.println("PIN validated successfully.");
         } else {
             System.err.println("Failed to validate PIN. SW=" + Integer.toHexString(response.getSW()));
+        }
+        return response.getSW() == SUCCESS;
+    }
+
+    private void changePIN(byte[] pin) throws Exception {
+        System.out.println("Changing PIN..." + bytesToHex(pin));
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_CHANGE_PIN, 0x00, 0x00, pin);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("PIN changed successfully.");
+        } else {
+            System.err.println("Failed to change PIN. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 }

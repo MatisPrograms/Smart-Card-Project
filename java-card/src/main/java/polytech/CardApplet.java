@@ -75,8 +75,6 @@ public class CardApplet extends Applet {
         // Get the APDU buffer
         byte[] buffer = apdu.getBuffer();
 
-        this.pin.resetAndUnblock();
-
         // return if this is a SELECT FILE command
         if ((buffer[ISO7816.OFFSET_CLA] == 0) && (buffer[ISO7816.OFFSET_INS] == (byte) 0xA4)) return;
 
@@ -105,7 +103,9 @@ public class CardApplet extends Applet {
     }
 
     private void exchangePublicKeys(APDU apdu) {
+        this.validation();
         byte[] buffer = apdu.getBuffer();
+        apdu.setIncomingAndReceive();
 
         RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
 
@@ -119,8 +119,9 @@ public class CardApplet extends Applet {
     }
 
     private void changePIN(APDU apdu) {
-//        this.validation();
+        this.validation();
         byte[] buffer = apdu.getBuffer();
+        apdu.setIncomingAndReceive();
 
         // Verify the given PIN
         if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
@@ -143,13 +144,14 @@ public class CardApplet extends Applet {
 
     private void validatePIN(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
+        apdu.setIncomingAndReceive();
 
         // Check the length
         if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
 
         // Check the PIN
-        if (!pin.check(DEFAULT_PIN, (short) 0, PIN_LENGTH))
-//        if (!pin.check(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH))
+//        if (!pin.check(DEFAULT_PIN, (short) 0, PIN_LENGTH))
+        if (!pin.check(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH))
             ISOException.throwIt((short) ((SW_PIN_FAILED << 8) | (pin.getTriesRemaining() & 0xFF)));
     }
 
