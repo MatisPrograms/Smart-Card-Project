@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="App" type="Application" factoryName="Application" nameIsGenerated="true">
+  <configuration default="false" name="Verification Server" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="fr.polytech.unice.App" />
     <module name="verification-server" />
     <option name="PROGRAM_PARAMETERS" value="--pin 6969" />

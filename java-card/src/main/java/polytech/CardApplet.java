@@ -163,7 +163,6 @@ public class CardApplet extends Applet {
         if (buffer[ISO7816.OFFSET_LC] != PIN_LENGTH) ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
 
         // Check the PIN
-//        if (!pin.check(DEFAULT_PIN, (short) 0, PIN_LENGTH))
         if (!pin.check(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH))
             ISOException.throwIt((short) ((SW_PIN_FAILED << 8) | (pin.getTriesRemaining() & 0xFF)));
     }
