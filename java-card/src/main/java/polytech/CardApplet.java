@@ -4,6 +4,8 @@ import javacard.framework.*;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.RSAPublicKey;
+import javacard.security.Signature;
+import javacardx.crypto.Cipher;
 
 public class CardApplet extends Applet {
 
@@ -28,25 +30,21 @@ public class CardApplet extends Applet {
     // Cryptographic and Packet constants
     public static final short KEY_SIZE = 512;
     public static final short MAX_PACKET_SIZE = 127;
-
+    public static final byte START_MESSAGE_FLAG = (byte) 0x00;
+    public static final byte CONTINUE_MESSAGE_FLAG = (byte) 0x7f;
+    public static final byte END_MESSAGE_FLAG = (byte) 0xff;
     // SW Error codes
     private static final byte SW_PIN_FAILED = (byte) 0x99;
-
     // Cryptographic objects
     private final OwnerPIN pin;
     private final KeyPair keyPair;
     private RSAPublicKey serversPublicKey;
-
     // Server address
     private byte[] serversAddress = null;
-
     // Message buffer
     private byte[] messageBuffer;
     private short messageBufferOffset = 0;
     private short messageBufferIndex = 0;
-    public static final byte START_MESSAGE_FLAG = (byte) 0x00;
-    public static final byte CONTINUE_MESSAGE_FLAG = (byte) 0x7f;
-    public static final byte END_MESSAGE_FLAG = (byte) 0xff;
 
     /**
      * Creates a new instance of the applet.
@@ -283,6 +281,31 @@ public class CardApplet extends Applet {
         apdu.setIncomingAndReceive();
 
         // Decrypt the message
+    }
+
+    public short encryptMessage(byte[] message, byte[] dest, short length) {
+        Cipher cipher = Cipher.getInstance(Cipher.ALG_RSA_PKCS1, false);
+
+        cipher.init(this.serversPublicKey, Cipher.MODE_ENCRYPT);
+        return cipher.doFinal(message, ISO7816.OFFSET_CDATA, length, dest, (short) 0);
+    }
+
+    public short signMessage(byte[] message, byte[] dest, short lengthMessage) {
+
+        Util.setShort(dest, (short) (0), lengthMessage);
+        Util.arrayCopy(message, (byte) 0, dest, (short) (2), lengthMessage);
+
+        Signature signature = Signature.getInstance(Signature.ALG_RSA_SHA_ISO9796, false);
+        signature.init(this.keyPair.getPrivate(), Signature.MODE_SIGN);
+
+        byte[] signedMessage = new byte[signature.getLength()];
+        signature.sign(message, (short) 0, lengthMessage, signedMessage, (short) 0);
+
+        short lengthSignature = signature.getLength();
+        Util.setShort(dest, (short) (2 + lengthMessage), lengthSignature);
+        Util.arrayCopy(signedMessage, (byte) 0, dest, (short) (4 + lengthMessage), lengthSignature);
+
+        return (short) (4 + lengthMessage + lengthSignature);
     }
 
     private void validation() {
