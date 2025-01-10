@@ -12,6 +12,8 @@
     <option name="EXECUTE_IN_TERMINAL" value="true" />
     <option name="EXECUTE_SCRIPT_FILE" value="false" />
     <envs />
-    <method v="2" />
+    <method v="2">
+      <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/java-card/build.xml" target="binarize.all.standard" />
+    </method>
   </configuration>
 </component>
