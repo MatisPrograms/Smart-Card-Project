@@ -3,7 +3,7 @@ package fr.polytech.unice;
 import javax.smartcardio.*;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
-import java.net.URL;
+import java.security.KeyFactory;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.List;
@@ -55,6 +55,13 @@ public class JavaCardTerminal {
         return bytes;
     }
 
+    public static byte[] concatenateArrays(byte[] first, byte[] second) {
+        byte[] result = new byte[first.length + second.length];
+        System.arraycopy(first, 0, result, 0, first.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
     @SuppressWarnings("unused")
     public static byte[] buildPublicKeyArray(byte[] array1, byte[] array2, short lc) {
         byte[] result = new byte[array1.length + array2.length + 2 * lc];
@@ -104,6 +111,11 @@ public class JavaCardTerminal {
         this.channel = card.getBasicChannel();
     }
 
+    public void refresh() throws CardException {
+        this.channel = null;
+        this.connect();
+    }
+
     public void selectApplet() throws CardException {
         if (this.channel == null) this.connect();
 
@@ -137,7 +149,7 @@ public class JavaCardTerminal {
         }
     }
 
-    public boolean tryPIN(byte[] pin) throws CardException {
+    public boolean checkPIN(byte[] pin) throws CardException {
         System.out.println("Trying PIN..." + bytesToHex(pin));
         CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_VALIDATE_PIN, 0x00, 0x00, pin);
         ResponseAPDU response = this.channel.transmit(command);
@@ -162,7 +174,7 @@ public class JavaCardTerminal {
         }
     }
 
-    public RSAPublicKeySpec exchangePublicKeys(RSAPublicKey publicKey) throws CardException {
+    public RSAPublicKey exchangePublicKeys(RSAPublicKey publicKey) throws Exception {
         if (this.channel == null) this.connect();
 
         short lc = 2;
@@ -181,7 +193,7 @@ public class JavaCardTerminal {
             BigInteger exponent = new BigInteger(1, response.getData(), lc, expLen);
             BigInteger modulus = new BigInteger(1, response.getData(), 2 * lc + expLen, modLen);
 
-            return new RSAPublicKeySpec(modulus, exponent);
+            return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
         } else {
             System.err.println("Failed to exchange public keys. SW=" + Integer.toHexString(response.getSW()));
             return null;
@@ -212,7 +224,7 @@ public class JavaCardTerminal {
         }
     }
 
-    public URL getServerAddress() throws CardException, MalformedURLException {
+    public String getServerAddress() throws CardException, MalformedURLException {
         if (this.channel == null) this.connect();
 
         CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_SERVER_ADDRESS, 0x00, 0x00, MAX_SIZE);
@@ -220,10 +232,9 @@ public class JavaCardTerminal {
 
         if (response.getSW() == SUCCESS) {
             byte[] data = response.getData();
-            System.out.println("Server address sent successfully." + bytesToHex(data));
             StringBuilder sb = new StringBuilder(":" + ((data[data.length - 2] & 0xff) << 8 | (data[data.length - 1] & 0xff)));
             for (int i = data.length - 3; i >= 0; i--) sb.insert(0, data[i]).insert(0, ".");
-            return new URL(sb.deleteCharAt(0).insert(0, "http://").toString());
+            return sb.deleteCharAt(0).insert(0, "http://").toString();
         } else {
             System.err.println("Failed to send server address. SW=" + Integer.toHexString(response.getSW()));
             return null;

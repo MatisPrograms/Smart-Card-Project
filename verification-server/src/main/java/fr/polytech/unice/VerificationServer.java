@@ -1,19 +1,20 @@
 package fr.polytech.unice;
 
 import com.sun.net.httpserver.HttpServer;
+import fr.polytech.unice.api.Router;
+import fr.polytech.unice.api.Routes;
 
-import javax.smartcardio.*;
+import javax.smartcardio.Card;
+import javax.smartcardio.CardTerminal;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
-import java.security.spec.RSAPublicKeySpec;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import fr.polytech.unice.api.Router;
 
 import static fr.polytech.unice.JavaCardTerminal.bytesToHex;
 import static fr.polytech.unice.JavaCardTerminal.stringToBytes;
@@ -23,11 +24,12 @@ public class VerificationServer {
 
     // Cryptographic constants
     private final KeyPair keyPair;
-    private RSAPublicKeySpec cardsPublicKey;
+    private final RSAPublicKey cardsPublicKey;
 
     // Http server constants
-    private final int PORT = 8080;
+    private static final int PORT = 8080;
 
+    @SuppressWarnings("unused")
     public VerificationServer() {
         this.keyPair = null;
         this.cardsPublicKey = null;
@@ -39,11 +41,6 @@ public class VerificationServer {
         if (Integer.parseInt(pin) < 0 || Integer.parseInt(pin) > Integer.parseInt("9".repeat(PIN_LENGTH)))
             throw new IllegalArgumentException("Invalid PIN. Must be a " + PIN_LENGTH + "-digit number.");
         else System.out.println("PIN selected: " + pin);
-
-        // Generate the RSA key pair for the server
-        KeyPairGenerator rsaGenerator = KeyPairGenerator.getInstance("RSA");
-        rsaGenerator.initialize(KEY_SIZE);
-        this.keyPair = rsaGenerator.generateKeyPair();
 
         // Get the card terminal
         JavaCardTerminal jcTerminal = new JavaCardTerminal();
@@ -59,13 +56,18 @@ public class VerificationServer {
 
         // Set the PIN to the card
         byte[] newPIN = stringToBytes(pin);
-        if (!jcTerminal.tryPIN(newPIN)) {
+        if (!jcTerminal.checkPIN(newPIN)) {
             System.out.println("New PIN is not set, defaulting to " + bytesToHex(DEFAULT_PIN));
-            if (!jcTerminal.tryPIN(DEFAULT_PIN)) throw new Exception("Please reset the card.");
+            if (!jcTerminal.checkPIN(DEFAULT_PIN)) throw new Exception("Please reset the card.");
             jcTerminal.changePIN(newPIN);
-            jcTerminal.tryPIN(newPIN);
+            jcTerminal.checkPIN(newPIN);
             jcTerminal.getPINStatus();
         }
+
+        // Generate the RSA key pair for the server
+        KeyPairGenerator rsaGenerator = KeyPairGenerator.getInstance("RSA");
+        rsaGenerator.initialize(KEY_SIZE);
+        this.keyPair = rsaGenerator.generateKeyPair();
 
         // Exchange public keys
         this.cardsPublicKey = jcTerminal.exchangePublicKeys((RSAPublicKey) this.keyPair.getPublic());
@@ -84,6 +86,9 @@ public class VerificationServer {
         Router router = new Router(this);
         server.createContext("/", router);
 
+        // Set up the routes
+        new Routes();
+
         // Set up the thread pool
         Executor executor = new ThreadPoolExecutor(10, 100, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         server.setExecutor(executor);
@@ -91,5 +96,15 @@ public class VerificationServer {
         // Start server
         System.out.println("Server running on http://localhost:" + PORT);
         server.start();
+    }
+
+    @SuppressWarnings("unused")
+    public KeyPair getKeyPair() {
+        return keyPair;
+    }
+
+    @SuppressWarnings("unused")
+    public RSAPublicKey getCardsPublicKey() {
+        return cardsPublicKey;
     }
 }

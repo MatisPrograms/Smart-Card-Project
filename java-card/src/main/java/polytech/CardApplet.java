@@ -175,11 +175,10 @@ public class CardApplet extends Applet {
     }
 
     private void serverAddress(APDU apdu) {
-        this.validation();
         byte[] buffer = apdu.getBuffer();
 
         // Store the server address
-        if (this.serversAddress == null) {
+        if (this.pin.isValidated()) {
             apdu.setIncomingAndReceive();
 
             // Store the server's address

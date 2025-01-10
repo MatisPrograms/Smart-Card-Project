@@ -1,5 +1,9 @@
 package fr.polytech.unice;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import fr.polytech.unice.api.HTTP_METHOD;
+
 import javax.smartcardio.Card;
 import javax.smartcardio.CardException;
 import javax.smartcardio.CardTerminal;
@@ -13,11 +17,12 @@ import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
-import java.lang.Thread;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static javax.swing.SwingConstants.VERTICAL;
 
@@ -48,17 +53,11 @@ public class VendingMachine extends JFrame {
     private final JButton buttonNo = new JButton("❌");
 
     // Products placement
-    private final Map<String, String[]> products = new HashMap<>() {{
-        put("A1", new String[]{"/coconut.png", price()});
-        put("A3", new String[]{"/dondew.png", price()});
-        put("B3", new String[]{"/lemon.png", price()});
-        put("B2", new String[]{"/nrg.png", price()});
-        put("C2", new String[]{"/starbucks.png", price()});
-        put("C4", new String[]{"/peach.png", price()});
-    }};
+    private JsonObject products;
     private final String[] empty = new String[]{"/empty.png", "0.00€"};
     // Variables
     private String selected = "";
+    private String serverURL;
 
     public VendingMachine() throws Exception {
         // Set the look and feel of the frame and the title
@@ -198,14 +197,92 @@ public class VendingMachine extends JFrame {
                 CardTerminal cardTerminal = jcTerminal.getTerminal();
 
                 // Handle the card terminal
-                while (true) {
-                    this.handleCardTerminal(jcTerminal, cardTerminal);
-                    Thread.sleep(100);
-                }
+                while (true) this.handleCardTerminal(jcTerminal, cardTerminal);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private void handleCardTerminal(JavaCardTerminal jcTerminal, CardTerminal terminal) {
+        try {
+            // Wait for card insertion
+            terminal.waitForCardPresent(0);
+
+            // Connect to the card and select the applet
+            Card card = terminal.connect("*");
+            jcTerminal.selectApplet();
+
+            // Do logic with the card when inserted
+            this.cardInserted(jcTerminal);
+
+            // Wait for the card to be removed
+            card.disconnect(false);
+            terminal.waitForCardAbsent(0);
+
+            // Do logic with the card when removed
+            this.cardRemoved(jcTerminal);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void cardInserted(JavaCardTerminal jcTerminal) throws MalformedURLException, CardException {
+        if (this.serverURL == null) this.serverURL = jcTerminal.getServerAddress();
+        System.out.println("The Server's address is: " + this.serverURL);
+
+        this.getProducts();
+        this.updateItems(this.products);
+
+//            jcTerminal.tryPIN(JavaCardTerminal.stringToBytes(this.askUserForPIN()));
+    }
+
+    private void cardRemoved(JavaCardTerminal jcTerminal) throws CardException {
+        this.updateItems();
+        jcTerminal.refresh();
+    }
+
+    private String fetchData(HTTP_METHOD method, String path) throws Exception {
+        URL url = new URI(this.serverURL + path).toURL();
+
+        // Open a connection to the URL using HttpURLConnection
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+        // Set request method (GET, POST, etc.)
+        connection.setRequestMethod(method.toString());
+
+        // Get the response code (200 OK, 404 Not Found, etc.)
+        int responseCode = connection.getResponseCode();
+        System.out.println("Response Code: " + responseCode);
+
+        // Read the response from the server
+        BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+        StringBuilder response = new StringBuilder();
+        String line;
+
+        while ((line = reader.readLine()) != null) response.append(line);
+        reader.close();
+
+        // Print the response
+        System.out.println("Response Body:");
+        System.out.println(response);
+
+        // Disconnect the HttpURLConnection
+        connection.disconnect();
+        return response.toString();
+    }
+
+    private void getProducts() {
+        // Do HTTP request to the server
+        try {
+            this.products = JsonParser.parseString(this.fetchData(HTTP_METHOD.GET, "/products")).getAsJsonObject();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private String askUserForPIN() {
+        return JOptionPane.showInputDialog(this, "Enter your PIN:", "PIN", JOptionPane.PLAIN_MESSAGE);
     }
 
     private ActionListener buttonLogic(JButton button) {
@@ -219,8 +296,9 @@ public class VendingMachine extends JFrame {
             } else if (this.selected.length() == 1 && button.getText().matches("[1-4]")) {
                 this.selected += button.getText();
                 this.screen.setText(this.selected);
-            } else if (this.selected.length() == 2 && button.getText().equals("✔")) {
-                this.screen.setText("Item: " + this.selected + " selected for: " + this.products.getOrDefault(this.selected, this.empty)[1] + "    Revalidate to accept");
+            } else if (this.selected.length() == 2 && button.getText().equals("✔") && this.products.has(this.selected)) {
+                String selectedProductPrice = getOptionalValue(() -> this.products.get(this.selected).getAsJsonObject().get("price").getAsString()).orElse("0.00€");
+                this.screen.setText("Item: " + this.selected + " selected for: " + selectedProductPrice + "    Revalidate to accept");
                 this.selected += "✔";
             } else if (button.getText().equals("❌")) {
                 this.selected = "";
@@ -232,36 +310,11 @@ public class VendingMachine extends JFrame {
         };
     }
 
-    private void handleCardTerminal(JavaCardTerminal jcTerminal, CardTerminal terminal) {
-        try {
-            // Wait for card insertion
-            terminal.waitForCardPresent(0);
-            Card card = terminal.connect("*");
-            System.out.println("Card inserted.");
-
-            jcTerminal.selectApplet();
-            jcTerminal.tryPIN(JavaCardTerminal.stringToBytes("6969"));
-//
-            URL url = jcTerminal.getServerAddress();
-            System.out.println("The Server's address is: " + url);
-
-            this.updateItems(this.products);
-
-            // Wait for the card to be removed
-            card.disconnect(false);
-            terminal.waitForCardAbsent(0);
-            System.out.println("Card removed.");
-            this.updateItems();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private void updateItems() {
-        this.updateItems(new HashMap<>());
+        this.updateItems(new JsonObject());
     }
 
-    private void updateItems(Map<String, String[]> products) {
+    private void updateItems(JsonObject products) {
         this.itemsPanel.removeAll();
         for (int y = 0; y < 3; y++) {
             for (int x = 0; x < 4; x++) {
@@ -272,7 +325,7 @@ public class VendingMachine extends JFrame {
         this.itemsPanel.repaint();
     }
 
-    private void addPanelItem(Map<String, String[]> products, int x, int y) {
+    private void addPanelItem(JsonObject products, int x, int y) {
         String key = (char) ('A' + y) + "" + (x + 1);
 
         // Create the item panel
@@ -285,12 +338,12 @@ public class VendingMachine extends JFrame {
 
         // Create the item image
         JLabel image = new JLabel();
-        image.setIcon(new ImageIcon("vending-machine/src/main/resources/assets" + products.getOrDefault(key, empty)[0]));
+        image.setIcon(new ImageIcon("vending-machine/src/main/resources/assets" + getOptionalValue(() -> products.get(key).getAsJsonObject().get("image").getAsString()).orElse(this.empty[0])));
         image.setHorizontalAlignment(SwingConstants.CENTER);
         itemPanel.add(image, BorderLayout.CENTER);
 
         // Create the item label
-        JLabel item = new JLabel(key + (products.containsKey(key) ? " - " + products.getOrDefault(key, empty)[1] : ""));
+        JLabel item = new JLabel(key + getOptionalValue(() -> " - " + products.get(key).getAsJsonObject().get("price").getAsString()).orElse(""));
         item.setFont(this.customFont.deriveFont(Font.BOLD, 24));
         item.setForeground(Color.WHITE);
         item.setBackground(new Color(178, 7, 8));
@@ -301,5 +354,13 @@ public class VendingMachine extends JFrame {
 
         // Add the item to the items panel
         this.itemsPanel.add(itemPanel);
+    }
+
+    private Optional<String> getOptionalValue(Supplier<String> function) {
+        try {
+            return Optional.ofNullable(function.get());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 }
