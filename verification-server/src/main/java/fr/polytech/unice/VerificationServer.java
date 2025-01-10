@@ -1,10 +1,19 @@
 package fr.polytech.unice;
 
+import com.sun.net.httpserver.HttpServer;
+
 import javax.smartcardio.*;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
+import java.util.concurrent.Executor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import fr.polytech.unice.api.Router;
 
 import static fr.polytech.unice.JavaCardTerminal.bytesToHex;
 import static fr.polytech.unice.JavaCardTerminal.stringToBytes;
@@ -18,6 +27,11 @@ public class VerificationServer {
 
     // Http server constants
     private final int PORT = 8080;
+
+    public VerificationServer() {
+        this.keyPair = null;
+        this.cardsPublicKey = null;
+    }
 
     // At installation time
     public VerificationServer(String pin) throws Exception {
@@ -56,14 +70,26 @@ public class VerificationServer {
         // Exchange public keys
         this.cardsPublicKey = jcTerminal.exchangePublicKeys((RSAPublicKey) this.keyPair.getPublic());
 
+        // Send HTTP IP address and port to the card
+        jcTerminal.sendServerAddress("127.0.0.1", PORT);
+
         // Disconnect the card and wait for card removal
         card.disconnect(false);
-
-        // Run the verification server
-        this.runHttpServer();
     }
 
-    private void runHttpServer() {
-        System.out.println("HTTP Server running on port 8080...");
+    public void runHttpServer() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+
+        // General handler for all routes
+        Router router = new Router(this);
+        server.createContext("/", router);
+
+        // Set up the thread pool
+        Executor executor = new ThreadPoolExecutor(10, 100, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        server.setExecutor(executor);
+
+        // Start server
+        System.out.println("Server running on http://localhost:" + PORT);
+        server.start();
     }
 }

@@ -12,7 +12,7 @@ public class App {
     public static void main(String[] args) throws Exception {
         int pinIndex = Arrays.asList(args).indexOf("--pin") + 1;
         String pin = pinIndex >= args.length ? askForPIN() : args[pinIndex];
-        new VerificationServer(pin);
+        new VerificationServer(pin).runHttpServer();
     }
 
     private static String askForPIN() {
