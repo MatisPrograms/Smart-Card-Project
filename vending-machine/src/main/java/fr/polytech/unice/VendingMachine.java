@@ -1,14 +1,21 @@
 package fr.polytech.unice;
 
 import javax.smartcardio.Card;
+import javax.smartcardio.CardException;
 import javax.smartcardio.CardTerminal;
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStreamReader;
+import java.lang.Thread;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -179,27 +186,7 @@ public class VendingMachine extends JFrame {
             button.setBorder(new BevelBorder(BevelBorder.RAISED));
             button.setFocusPainted(false);
 
-            button.addActionListener(_ -> {
-                if (this.selected.length() == 3 && button.getText().contains("✔")) {
-                    this.screen.setText("Payment successful    Thank you for your purchase");
-                    this.selected = "";
-                } else if ((this.selected.isEmpty() || this.selected.length() == 2) && button.getText().matches("[A-C]")) {
-                    this.selected = button.getText();
-                    this.screen.setText(this.selected);
-                } else if (this.selected.length() == 1 && button.getText().matches("[1-4]")) {
-                    this.selected += button.getText();
-                    this.screen.setText(this.selected);
-                } else if (this.selected.length() == 2 && button.getText().equals("✔")) {
-                    this.screen.setText("Item: " + this.selected + " selected for: " + this.products.getOrDefault(this.selected, this.empty)[1] + "    Revalidate to accept");
-                    this.selected += "✔";
-                } else if (button.getText().equals("❌")) {
-                    this.selected = "";
-                    this.screen.setText("Screen");
-                } else {
-                    this.selected = "";
-                    this.screen.setText("Invalid selection");
-                }
-            });
+            button.addActionListener(buttonLogic(button));
         }
 
         this.updateItems();
@@ -211,32 +198,62 @@ public class VendingMachine extends JFrame {
                 CardTerminal cardTerminal = jcTerminal.getTerminal();
 
                 // Handle the card terminal
-                while (true) this.handleCardTerminal(jcTerminal, cardTerminal);
+                while (true) {
+                    this.handleCardTerminal(jcTerminal, cardTerminal);
+                    Thread.sleep(100);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }).start();
     }
 
+    private ActionListener buttonLogic(JButton button) {
+        return _ -> {
+            if (this.selected.length() == 3 && button.getText().contains("✔")) {
+                this.screen.setText("Payment successful    Thank you for your purchase");
+                this.selected = "";
+            } else if ((this.selected.isEmpty() || this.selected.length() == 2) && button.getText().matches("[A-C]")) {
+                this.selected = button.getText();
+                this.screen.setText(this.selected);
+            } else if (this.selected.length() == 1 && button.getText().matches("[1-4]")) {
+                this.selected += button.getText();
+                this.screen.setText(this.selected);
+            } else if (this.selected.length() == 2 && button.getText().equals("✔")) {
+                this.screen.setText("Item: " + this.selected + " selected for: " + this.products.getOrDefault(this.selected, this.empty)[1] + "    Revalidate to accept");
+                this.selected += "✔";
+            } else if (button.getText().equals("❌")) {
+                this.selected = "";
+                this.screen.setText("Screen");
+            } else {
+                this.selected = "";
+                this.screen.setText("Invalid selection");
+            }
+        };
+    }
+
     private void handleCardTerminal(JavaCardTerminal jcTerminal, CardTerminal terminal) {
         try {
             // Wait for card insertion
             terminal.waitForCardPresent(0);
-
-            // Get the card channel
             Card card = terminal.connect("*");
             System.out.println("Card inserted.");
 
-            // DO SOMETHING WITH THE CARD
             jcTerminal.selectApplet();
+            jcTerminal.tryPIN(JavaCardTerminal.stringToBytes("6969"));
+//
+            URL url = jcTerminal.getServerAddress();
+            System.out.println("The Server's address is: " + url);
+
             this.updateItems(this.products);
 
             // Wait for the card to be removed
+            card.disconnect(false);
             terminal.waitForCardAbsent(0);
             System.out.println("Card removed.");
             this.updateItems();
         } catch (Exception e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 

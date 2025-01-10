@@ -9,11 +9,12 @@ public class CardApplet extends Applet {
 
     // CLA and INS constants
     public static final byte CLA_SECRET_APPLET = (byte) 0x88;
-    public static final byte INS_EXCHANGE_PUBLICKEYS = (byte) 0x10;
-    public static final byte INS_CHANGE_PIN = (byte) 0x20;
-    public static final byte INS_GET_PIN_TRIES = (byte) 0x30;
-    public static final byte INS_IS_PIN_VALIDATED = (byte) 0x40;
-    public static final byte INS_VALIDATE_PIN = (byte) 0x50;
+    public static final byte INS_GET_PIN_TRIES = (byte) 0x01;
+    public static final byte INS_VALIDATE_PIN = (byte) 0x02;
+    public static final byte INS_IS_PIN_VALIDATED = (byte) 0x03;
+    public static final byte INS_CHANGE_PIN = (byte) 0x04;
+    public static final byte INS_EXCHANGE_PUBLIC_KEYS = (byte) 0x05;
+    public static final byte INS_SERVER_ADDRESS = (byte) 0x06;
 
     // PIN constants
     public static final byte PIN_LENGTH = 4;
@@ -30,6 +31,9 @@ public class CardApplet extends Applet {
     private final OwnerPIN pin;
     private final KeyPair keyPair;
     private RSAPublicKey serversPublicKey;
+
+    // Server address
+    private byte[] serversAddress = null;
 
     /**
      * Creates a new instance of the applet.
@@ -84,20 +88,23 @@ public class CardApplet extends Applet {
         if (buffer[ISO7816.OFFSET_CLA] != CLA_SECRET_APPLET) ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
 
         switch (buffer[ISO7816.OFFSET_INS]) {
-            case INS_EXCHANGE_PUBLICKEYS:
-                exchangePublicKeys(apdu);
-                break;
-            case INS_CHANGE_PIN:
-                changePIN(apdu);
-                break;
             case INS_GET_PIN_TRIES:
                 getPINTries(apdu);
+                break;
+            case INS_VALIDATE_PIN:
+                validatePIN(apdu);
                 break;
             case INS_IS_PIN_VALIDATED:
                 isPINValidated(apdu);
                 break;
-            case INS_VALIDATE_PIN:
-                validatePIN(apdu);
+            case INS_CHANGE_PIN:
+                changePIN(apdu);
+                break;
+            case INS_EXCHANGE_PUBLIC_KEYS:
+                exchangePublicKeys(apdu);
+                break;
+            case INS_SERVER_ADDRESS:
+                serverAddress(apdu);
                 break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -165,6 +172,24 @@ public class CardApplet extends Applet {
         // Check the PIN
         if (!pin.check(buffer, ISO7816.OFFSET_CDATA, PIN_LENGTH))
             ISOException.throwIt((short) ((SW_PIN_FAILED << 8) | (pin.getTriesRemaining() & 0xFF)));
+    }
+
+    private void serverAddress(APDU apdu) {
+        this.validation();
+        byte[] buffer = apdu.getBuffer();
+
+        // Store the server address
+        if (this.serversAddress == null) {
+            apdu.setIncomingAndReceive();
+
+            // Store the server's address
+            this.serversAddress = new byte[buffer[ISO7816.OFFSET_LC]];
+            Util.arrayCopy(buffer, ISO7816.OFFSET_CDATA, this.serversAddress, (short) 0, buffer[ISO7816.OFFSET_LC]);
+        } else {
+            // Send the server's address
+            Util.arrayCopy(this.serversAddress, (short) 0, buffer, (short) 0, (short) this.serversAddress.length);
+            apdu.setOutgoingAndSend((short) 0, (short) this.serversAddress.length);
+        }
     }
 
     private void validation() {
