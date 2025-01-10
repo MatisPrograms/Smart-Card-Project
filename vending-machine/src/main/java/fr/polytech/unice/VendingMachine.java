@@ -17,16 +17,19 @@ import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
-import java.net.*;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import static fr.polytech.unice.JavaCardTerminal.stringToBytes;
 import static javax.swing.SwingConstants.VERTICAL;
 
 public class VendingMachine extends JFrame {
+    // Constants
     public static final Color BACKGROUND = new Color(221, 218, 208);
     private final Font customFont = Font.createFont(Font.TRUETYPE_FONT, new File("vending-machine/src/main/resources/fonts/amongus vector.ttf"));
 
@@ -51,12 +54,14 @@ public class VendingMachine extends JFrame {
     private final JButton button9 = new JButton("9");
     private final JButton buttonYes = new JButton("✔");
     private final JButton buttonNo = new JButton("❌");
-
+    private final String[] empty = new String[]{"/empty.png", "0.00€"};
+    // SignalEmitters
+    private final SignalEmitter cardPinEmitter = new SignalEmitter();
     // Products placement
     private JsonObject products;
-    private final String[] empty = new String[]{"/empty.png", "0.00€"};
     // Variables
     private String selected = "";
+    private boolean enteringPin = false;
     private String serverURL;
 
     public VendingMachine() throws Exception {
@@ -87,10 +92,6 @@ public class VendingMachine extends JFrame {
         });
 
         this.initComponents();
-    }
-
-    private static String price() {
-        return String.format("1.%02d€", (int) (Math.random() * 100));
     }
 
     private static Border padding(int left, int top, int right, int bottom) {
@@ -234,16 +235,54 @@ public class VendingMachine extends JFrame {
         this.getProducts();
         this.updateItems(this.products);
 
-//            jcTerminal.tryPIN(JavaCardTerminal.stringToBytes(this.askUserForPIN()));
+        AtomicReference<String> pin = new AtomicReference<>("");
+        AtomicBoolean waiting = new AtomicBoolean(true);
+
+        // Wait for the user to buy a product
+        this.cardPinEmitter.addActionListener(buyProduct -> {
+            if (!buyProduct.getActionCommand().equals("buyProduct")) return;
+
+            // Tell the user to enter their PIN
+            this.enteringPin = true;
+            this.selected = "";
+            this.screen.setText("Please enter your PIN code: ");
+        });
+
+        // Wait for the user to send their PIN
+        this.cardPinEmitter.addActionListener(sendPin -> {
+            if (!sendPin.getActionCommand().equals("sendPin")) return;
+
+            // Get the PIN entered by the user
+            pin.set(this.selected);
+            this.selected = "";
+            this.screen.setText("Screen");
+            this.enteringPin = false;
+            waiting.set(false);
+        });
+
+        while (waiting.get()) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if (jcTerminal.checkPIN(stringToBytes(pin.get()))) {
+            this.screen.setText("Payment successful    Thank you for your purchase");
+        } else {
+            this.screen.setText("Invalid PIN. Please try again.");
+        }
     }
 
     private void cardRemoved(JavaCardTerminal jcTerminal) throws CardException {
         this.updateItems();
         jcTerminal.refresh();
+        this.cardPinEmitter.removeAllActionListeners();
     }
 
     private String fetchData(HTTP_METHOD method, String path) throws Exception {
-        URL url = new URI(this.serverURL + path).toURL();
+        URL url = new URL(this.serverURL + path);
 
         // Open a connection to the URL using HttpURLConnection
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -275,37 +314,45 @@ public class VendingMachine extends JFrame {
     private void getProducts() {
         // Do HTTP request to the server
         try {
-            this.products = JsonParser.parseString(this.fetchData(HTTP_METHOD.GET, "/products")).getAsJsonObject();
+            this.products = JsonParser.parseString(this.fetchData(HTTP_METHOD.GET, "/products?decrypted")).getAsJsonObject();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private String askUserForPIN() {
-        return JOptionPane.showInputDialog(this, "Enter your PIN:", "PIN", JOptionPane.PLAIN_MESSAGE);
-    }
-
     private ActionListener buttonLogic(JButton button) {
         return _ -> {
-            if (this.selected.length() == 3 && button.getText().contains("✔")) {
-                this.screen.setText("Payment successful    Thank you for your purchase");
-                this.selected = "";
-            } else if ((this.selected.isEmpty() || this.selected.length() == 2) && button.getText().matches("[A-C]")) {
-                this.selected = button.getText();
-                this.screen.setText(this.selected);
-            } else if (this.selected.length() == 1 && button.getText().matches("[1-4]")) {
-                this.selected += button.getText();
-                this.screen.setText(this.selected);
-            } else if (this.selected.length() == 2 && button.getText().equals("✔") && this.products.has(this.selected)) {
-                String selectedProductPrice = getOptionalValue(() -> this.products.get(this.selected).getAsJsonObject().get("price").getAsString()).orElse("0.00€");
-                this.screen.setText("Item: " + this.selected + " selected for: " + selectedProductPrice + "    Revalidate to accept");
-                this.selected += "✔";
-            } else if (button.getText().equals("❌")) {
-                this.selected = "";
-                this.screen.setText("Screen");
+            if (!this.enteringPin) {
+
+                if (this.selected.length() == 3 && button.getText().contains("✔")) {
+                    this.cardPinEmitter.sendSignal("buyProduct");
+                } else if ((this.selected.isEmpty() || this.selected.length() == 2) && button.getText().matches("[A-C]")) {
+                    this.selected = button.getText();
+                    this.screen.setText(this.selected);
+                } else if (this.selected.length() == 1 && button.getText().matches("[1-4]")) {
+                    this.selected += button.getText();
+                    this.screen.setText(this.selected);
+                } else if (this.selected.length() == 2 && button.getText().equals("✔") && this.products.has(this.selected)) {
+                    String selectedProductPrice = getOptionalValue(() -> this.products.get(this.selected).getAsJsonObject().get("price").getAsString()).orElse("0.00€");
+                    this.screen.setText("Item: " + this.selected + " selected for: " + selectedProductPrice + "    Revalidate to accept");
+
+                    this.selected += "✔";
+                } else if (button.getText().equals("❌")) {
+                    this.selected = "";
+                    this.screen.setText("Screen");
+                } else {
+                    this.selected = "";
+                    this.screen.setText("Invalid selection");
+                }
             } else {
-                this.selected = "";
-                this.screen.setText("Invalid selection");
+                if (button.getText().matches("[0-9]")) {
+                    this.selected += button.getText();
+                    this.screen.setText(this.screen.getText() + "*");
+                } else if (button.getText().equals("✔")) {
+                    this.cardPinEmitter.sendSignal("sendPin");
+                } else if (button.getText().equals("❌")) {
+                    this.screen.setText("Please enter your PIN code: ");
+                }
             }
         };
     }

@@ -4,7 +4,6 @@ import javax.crypto.Cipher;
 import java.security.KeyPair;
 import java.security.interfaces.RSAPublicKey;
 
-import static fr.polytech.unice.JavaCardTerminal.bytesToHex;
 import static fr.polytech.unice.JavaCardTerminal.concatenateArrays;
 
 public record CryptographicWallet(
