@@ -2,7 +2,7 @@ package fr.polytech.unice;
 
 import javax.smartcardio.*;
 import java.math.BigInteger;
-import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
@@ -31,9 +31,7 @@ public class JavaCardTerminal {
 
     @SuppressWarnings("unused")
     public static String bytesToString(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) sb.append((char) b);
-        return sb.toString();
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     @SuppressWarnings("unused")
@@ -224,7 +222,7 @@ public class JavaCardTerminal {
         }
     }
 
-    public String getServerAddress() throws CardException, MalformedURLException {
+    public String getServerAddress() throws CardException {
         if (this.channel == null) this.connect();
 
         CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_SERVER_ADDRESS, 0x00, 0x00, MAX_SIZE);
@@ -238,6 +236,82 @@ public class JavaCardTerminal {
         } else {
             System.err.println("Failed to send server address. SW=" + Integer.toHexString(response.getSW()));
             return null;
+        }
+    }
+
+    public void sendData(byte[] bytes) throws CardException {
+        if (this.channel == null) this.connect();
+
+        // Send the data in packets
+        for (int i = 0; i < bytes.length; i += MAX_PACKET_SIZE - 1) {
+            byte[] packet = new byte[Math.min(MAX_PACKET_SIZE, bytes.length - i)];
+
+            // Set the first byte to 0x00 if there are more packets to send
+            packet[0] = i == 0
+                    ? START_MESSAGE_FLAG
+                    : i + packet.length < bytes.length
+                    ? CONTINUE_MESSAGE_FLAG
+                    : END_MESSAGE_FLAG;
+            System.arraycopy(bytes, i, packet, 1, packet.length - 1);
+
+            CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_RECEIVE_MESSAGE, 0x00, 0x00, packet);
+            ResponseAPDU response = this.channel.transmit(command);
+
+            if (response.getSW() != SUCCESS) System.err.println("Failed to send data. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    public String receiveData() throws CardException {
+        if (this.channel == null) this.connect();
+
+        byte[] buffer = new byte[1024];
+        boolean end = false;
+        int offset = 0;
+
+        while (!end && offset < buffer.length) {
+            CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_SEND_MESSAGE, 0x00, 0x00, MAX_SIZE);
+            ResponseAPDU response = this.channel.transmit(command);
+
+            if (response.getSW() == SUCCESS) {
+                byte[] packet = response.getData();
+                int dataPacketLength = packet.length - 1;
+                if (packet[0] == END_MESSAGE_FLAG) end = true;
+
+                System.arraycopy(packet, 1, buffer, offset, dataPacketLength);
+                offset += dataPacketLength;
+            } else {
+                System.err.println("Failed to receive data. SW=" + Integer.toHexString(response.getSW()));
+            }
+        }
+
+        byte[] data = new byte[offset];
+        System.arraycopy(buffer, 0, data, 0, offset);
+        return bytesToString(data);
+    }
+
+    public void encryptData() throws CardException {
+        if (this.channel == null) this.connect();
+
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_ENCRYPT_MESSAGE, 0x00, 0x00);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("Data encrypted successfully.");
+        } else {
+            System.err.println("Failed to encrypt data. SW=" + Integer.toHexString(response.getSW()));
+        }
+    }
+
+    public void decryptData() throws CardException {
+        if (this.channel == null) this.connect();
+
+        CommandAPDU command = new CommandAPDU(CLA_SECRET_APPLET, INS_DECRYPT_MESSAGE, 0x00, 0x00);
+        ResponseAPDU response = this.channel.transmit(command);
+
+        if (response.getSW() == SUCCESS) {
+            System.out.println("Data decrypted successfully.");
+        } else {
+            System.err.println("Failed to decrypt data. SW=" + Integer.toHexString(response.getSW()));
         }
     }
 }

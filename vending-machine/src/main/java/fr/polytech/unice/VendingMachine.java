@@ -228,11 +228,12 @@ public class VendingMachine extends JFrame {
         }
     }
 
-    private void cardInserted(JavaCardTerminal jcTerminal) throws MalformedURLException, CardException {
+    private void cardInserted(JavaCardTerminal jcTerminal) throws CardException {
+        jcTerminal.refresh();
         if (this.serverURL == null) this.serverURL = jcTerminal.getServerAddress();
         System.out.println("The Server's address is: " + this.serverURL);
 
-        this.getProducts();
+        this.getProducts(jcTerminal);
         this.updateItems(this.products);
 
         AtomicReference<String> pin = new AtomicReference<>("");
@@ -277,8 +278,8 @@ public class VendingMachine extends JFrame {
 
     private void cardRemoved(JavaCardTerminal jcTerminal) throws CardException {
         this.updateItems();
-        jcTerminal.refresh();
         this.cardPinEmitter.removeAllActionListeners();
+        jcTerminal.refresh();
     }
 
     private String fetchData(HTTP_METHOD method, String path) throws Exception {
@@ -311,10 +312,20 @@ public class VendingMachine extends JFrame {
         return response.toString();
     }
 
-    private void getProducts() {
+    private void getProducts(JavaCardTerminal jcTerminal) {
         // Do HTTP request to the server
         try {
-            this.products = JsonParser.parseString(this.fetchData(HTTP_METHOD.GET, "/products?decrypted")).getAsJsonObject();
+            String response = this.fetchData(HTTP_METHOD.GET, "/products?decrypted");
+
+//            jcTerminal.checkPIN(stringToBytes("6969"));
+//            jcTerminal.sendData(response.getBytes());
+//            jcTerminal.decryptData();
+//            String newResponse = jcTerminal.receiveData();
+//            System.out.println(response);
+//            System.out.println(newResponse);
+//            System.out.println(response.equals(newResponse));
+
+            this.products = JsonParser.parseString(response).getAsJsonObject();
         } catch (Exception e) {
             e.printStackTrace();
         }
