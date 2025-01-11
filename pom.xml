@@ -22,36 +22,4 @@
     <maven.compiler.source>23</maven.compiler.source>
     <maven.compiler.target>23</maven.compiler.target>
   </properties>
-
-  <dependencies>
-    <dependency>
-      <groupId>Egate</groupId>
-      <artifactId>api</artifactId>
-      <version>1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>Egate</groupId>
-      <artifactId>captransf</artifactId>
-      <version>1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>Egate</groupId>
-      <artifactId>converter</artifactId>
-      <version>1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>Egate</groupId>
-      <artifactId>makeijc</artifactId>
-      <version>1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>Egate</groupId>
-      <artifactId>offcardverifier</artifactId>
-      <version>1</version>
-    </dependency>
-  </dependencies>
 </project>

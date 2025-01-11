@@ -1,54 +1,42 @@
 ﻿# Smart-Card-Project
 
-Voici les étapes a faire pour pouvoir run le projet
+<p align="center">
+  <img src="https://www.wanderglobe.org/wp-content/uploads/2021/04/Smart-Cards52-1536x816.jpg" alt="Java Smart Card">
+</p>
 
-## Pour le serveur de vérification: 
-```
-JAVA_HOME=/path/to/your/java/home
-IDEA_RT_JAR=/path/to/idea_rt.jar
-PROJECT_HOME=/path/to/Smart-Card-Project
-M2_REPO=/path/to/.m2/repository
+## Description
 
-$JAVA_HOME/bin/java \
-  -javaagent:$IDEA_RT_JAR=39381:/path/to/intellij/bin \
-  -Dfile.encoding=UTF-8 \
-  -Dsun.stdout.encoding=UTF-8 \
-  -Dsun.stderr.encoding=UTF-8 \
-  -classpath "$PROJECT_HOME/verification-server/target/classes:\
-$PROJECT_HOME/java-card/target/classes:\
-$M2_REPO/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar:\
-$M2_REPO/com/github/krraghavan/xeger/1.0.0-RELEASE/xeger-1.0.0-RELEASE.jar:\
-$M2_REPO/dk/brics/automaton/automaton/1.11-8/automaton-1.11-8.jar:\
-$M2_REPO/Egate/api/1/api-1.jar:\
-$M2_REPO/Egate/captransf/1/captransf-1.jar:\
-$M2_REPO/Egate/converter/1/converter-1.jar:\
-$M2_REPO/Egate/makeijc/1/makeijc-1.jar:\
-$M2_REPO/Egate/offcardverifier/1/offcardverifier-1.jar" \
-  fr.polytech.unice.App --pin 6969
+Ce projet est une application Java pour la gestion des cartes à puce. Il utilise Maven pour la gestion des dépendances
+et Ant pour les tâches de build. L'application permet de gérer les PINs, envoyer et recevoir des messages, et effectuer
+des opérations cryptographiques comme la signature et le chiffrement des messages.
+
+Ce projet est composé de trois parties :
+
+- Une [**Applet Java Card**](java-card/README.md) pour la gestion des cartes à puce.
+- Un [**Serveur de Vérification**](vending-machine/README.md) pour vérifier les signatures des messages.
+- Un [**Distributeur Automatique**](verification-server/README.md) pour que l'utilisateur puisse passer des commandes.
+
+## Prérequis
+
+- Java 8 pour complier l'applet Java Card
+- Java 23 ou supérieur pour exécuter les deux applications
+- Maven 3.6 ou supérieur pour compiler le projet et gérer les dépendances
+- Ant 1.10 ou supérieur pour exécuter les scripts de lancement
+- D'autres encore que vous pouvez trouver dans les `README` des sous-projets
+
+## Cloner le dépôt
+
+Pour cloner le dépôt, exécutez la commande suivante :
+
+```bash
+  git clone https://github.com/MatisPrograms/Smart-Card-Project.git
+  cd Smart-Card-Project
 ```
 
-## Et pour distributeur :
-```
-JAVA_HOME=/path/to/your/java/home
-IDEA_RT_JAR=/path/to/idea_rt.jar
-PROJECT_HOME=/path/to/Smart-Card-Project
-M2_REPO=/path/to/.m2/repository
+## Installation des dépendances
 
-$JAVA_HOME/bin/java \
-  -javaagent:$IDEA_RT_JAR=33517:/path/to/intellij/bin \
-  -Dfile.encoding=UTF-8 \
-  -Dsun.stdout.encoding=UTF-8 \
-  -Dsun.stderr.encoding=UTF-8 \
-  -classpath "$PROJECT_HOME/vending-machine/target/classes:\
-$PROJECT_HOME/verification-server/target/classes:\
-$PROJECT_HOME/java-card/target/classes:\
-$M2_REPO/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar:\
-$M2_REPO/com/github/krraghavan/xeger/1.0.0-RELEASE/xeger-1.0.0-RELEASE.jar:\
-$M2_REPO/dk/brics/automaton/automaton/1.11-8/automaton-1.11-8.jar:\
-$M2_REPO/Egate/api/1/api-1.jar:\
-$M2_REPO/Egate/captransf/1/captransf-1.jar:\
-$M2_REPO/Egate/converter/1/converter-1.jar:\
-$M2_REPO/Egate/makeijc/1/makeijc-1.jar:\
-$M2_REPO/Egate/offcardverifier/1/offcardverifier-1.jar" \
-  fr.polytech.unice.App
-```
+## Structure du projet
+
+- `src/main/java`: Contient le code source de l'application.
+- `pom.xml`: Fichier de configuration Maven.
+- `build.xml`: Fichier de configuration Ant.
